@@ -1,0 +1,1328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Call-out Tracker | Pro</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Updated Libraries for Robust Excel + Image Export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; scroll-behavior: smooth; }
+        .active-tab { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 700; }
+        .no-scrollbar::-webkit-scrollbar { display: none; }
+        .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        /* Dropdown Search UI */
+        .dropdown-content { display: none; position: absolute; background-color: white; min-width: 100%; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1); z-index: 100; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 4px; max-height: 200px; overflow-y: auto; }
+        .dropdown-content.show { display: block; }
+        .dropdown-item { padding: 10px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
+        .dropdown-item:hover { background-color: #f1f5f9; }
+
+        tr.clickable-row { transition: all 0.2s ease; }
+        tr.clickable-row:hover { background-color: #f8fafc; cursor: pointer; transform: scale(1.002); }
+        
+        /* Custom Modal Transitions */
+        .modal-overlay { transition: opacity 0.3s ease; }
+        .modal-container { transition: transform 0.3s ease, opacity 0.3s ease; }
+    </style>
+</head>
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen">
+
+    <!-- Navigation -->
+    <nav class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50 border-b border-slate-100">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div class="flex justify-between h-20 items-center">
+                <div class="flex items-center gap-2">
+                    <div class="p-2 bg-blue-600 rounded-lg shadow-lg shadow-blue-200">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                        </svg>
+                    </div>
+                    <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Call-out Tracker</span>
+                </div>
+                <div class="hidden md:flex space-x-10">
+                    <button onclick="showSection('dashboard')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Dashboard</button>
+                    <button onclick="showSection('record-log')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Record Log</button>
+                    <button onclick="showSection('settings')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Settings</button>
+                </div>
+                <button onclick="exportToExcel()" class="hidden sm:flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl shadow-green-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export w/ Images
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 mb-24 md:mb-0">
+        
+        <!-- SECTION: DASHBOARD -->
+        <section id="dashboard" class="space-y-8 animate-in fade-in duration-500">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                    <h1 class="text-3xl font-extrabold text-slate-900">Operations Analytics</h1>
+                    <p class="text-slate-500 mt-1">Real-time overview. Click any record to view or edit details.</p>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <!-- Filter Dropdown -->
+                    <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
+                        <label for="dashboard-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</label>
+                        <select id="dashboard-filter" onchange="handleDashboardFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer">
+                            <option value="overall">Overall (All Time)</option>
+                            <option value="current_month">Current Month</option>
+                            <option value="specific_month">Select Month & Year</option>
+                        </select>
+                    </div>
+                    <!-- Specific Month Picker (Hidden by default) -->
+                    <input type="month" id="dashboard-month-picker" onchange="renderDashboard()" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="bg-white p-7 rounded-3xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-widest" id="label-total">Lifetime Total</p>
+                    <p id="stat-total" class="text-4xl font-black text-blue-600 mt-2">0</p>
+                </div>
+                <div class="bg-white p-7 rounded-3xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Today's Active (PHT)</p>
+                    <p id="stat-today" class="text-4xl font-black text-orange-500 mt-2">0</p>
+                </div>
+                <div class="bg-white p-7 rounded-3xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Top Flagged Brand</p>
+                    <p id="stat-brand" class="text-xl font-bold text-slate-800 mt-2 truncate">-</p>
+                </div>
+                <div class="bg-white p-7 rounded-3xl shadow-sm border border-slate-100">
+                    <p class="text-xs text-slate-400 font-bold uppercase tracking-widest">Lead Reporter</p>
+                    <p id="stat-who" class="text-xl font-bold text-slate-800 mt-2 truncate">-</p>
+                </div>
+            </div>
+
+            <!-- Coaching Priority Widget (Moved Top) -->
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                <div class="px-8 py-6 border-b border-slate-50 bg-red-50/30 flex justify-between items-center">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-red-100 rounded-lg text-red-600">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                        </div>
+                        <div>
+                            <h2 class="font-extrabold text-slate-900">Coaching Priority</h2>
+                            <p class="text-[10px] font-bold text-red-500 uppercase tracking-wide">High Frequency Call-outs</p>
+                        </div>
+                    </div>
+                    <span id="coaching-period-label" class="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">Overall</span>
+                </div>
+                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Coaching items injected here -->
+                </div>
+            </div>
+
+            <!-- Recent Operational Activity (Moved Bottom) -->
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
+                <div class="px-8 py-6 border-b border-slate-50">
+                    <h2 class="font-extrabold text-slate-900">Recent Operational Activity</h2>
+                </div>
+                <div class="overflow-x-auto flex-1">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50/50 text-slate-400 uppercase text-[10px] font-black tracking-widest">
+                            <tr>
+                                <th class="px-8 py-4">Time (PHT)</th>
+                                <th class="px-8 py-4">Brand</th>
+                                <th class="px-8 py-4">Reporter</th>
+                                <th class="px-8 py-4">Reason</th>
+                                <th class="px-8 py-4 text-right">Team</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-table-body" class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: RECORD LOG -->
+        <section id="record-log" class="hidden space-y-8">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
+                <h1 class="text-3xl font-extrabold text-slate-900">History Log</h1>
+                <button onclick="openCalloutModal()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-bold shadow-xl shadow-blue-100 flex items-center justify-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                    New Log
+                </button>
+            </div>
+
+            <div id="lol-filter-container" class="flex gap-3 overflow-x-auto no-scrollbar pb-2"></div>
+
+            <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left text-sm">
+                        <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] font-black tracking-widest">
+                            <tr>
+                                <th class="px-6 py-4">Evidence</th>
+                                <th class="px-6 py-4">Timeline</th>
+                                <th class="px-6 py-4">Details</th>
+                                <th class="px-6 py-4">Lead Remarks</th>
+                                <th class="px-6 py-4 text-center">Manage</th>
+                            </tr>
+                        </thead>
+                        <tbody id="full-log-body" class="divide-y divide-slate-50"></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- SECTION: SETTINGS -->
+        <section id="settings" class="hidden space-y-10">
+            <h1 class="text-3xl font-extrabold text-slate-900">Global Settings</h1>
+            
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                <div class="lg:col-span-3 flex lg:flex-col gap-2 overflow-x-auto no-scrollbar">
+                    <button onclick="switchSettingsTab('brand')" id="tab-brand" class="setting-tab flex-1 lg:flex-none text-left px-5 py-3.5 rounded-2xl font-bold text-sm bg-blue-50 text-blue-600 whitespace-nowrap">Brands</button>
+                    <button onclick="switchSettingsTab('leads')" id="tab-leads" class="setting-tab flex-1 lg:flex-none text-left px-5 py-3.5 rounded-2xl font-bold text-sm text-slate-500 hover:bg-slate-50 whitespace-nowrap">Operator Leads</button>
+                    <button onclick="switchSettingsTab('operators')" id="tab-operators" class="setting-tab flex-1 lg:flex-none text-left px-5 py-3.5 rounded-2xl font-bold text-sm text-slate-500 hover:bg-slate-50 whitespace-nowrap">Mapping</button>
+                    <button onclick="switchSettingsTab('roles')" id="tab-roles" class="setting-tab flex-1 lg:flex-none text-left px-5 py-3.5 rounded-2xl font-bold text-sm text-slate-500 hover:bg-slate-50 whitespace-nowrap">Personnel (Roles)</button>
+                    <button onclick="switchSettingsTab('backup')" id="tab-backup" class="setting-tab flex-1 lg:flex-none text-left px-5 py-3.5 rounded-2xl font-bold text-sm text-slate-500 hover:bg-slate-50 whitespace-nowrap">Backup & Restore</button>
+                </div>
+
+                <div class="lg:col-span-9 bg-white p-8 rounded-[2.5rem] shadow-sm border border-slate-100 min-h-[500px]">
+                    <!-- Brand -->
+                    <div id="set-brand" class="setting-panel space-y-6">
+                        <h3 class="text-xl font-bold">Brand Portfolio</h3>
+                        <div class="flex gap-3">
+                            <input type="text" id="new-brand" placeholder="Add Brand" class="flex-1 bg-slate-50 border-0 rounded-xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-blue-500">
+                            <button onclick="addItem('brands', 'new-brand')" class="bg-blue-600 text-white px-6 rounded-xl font-bold text-lg hover:bg-blue-700">+</button>
+                        </div>
+                        <ul id="list-brands" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></ul>
+                    </div>
+
+                    <!-- Leads -->
+                    <div id="set-leads" class="setting-panel hidden space-y-6">
+                        <h3 class="text-xl font-bold">Live Operator Management</h3>
+                        <div class="flex gap-3">
+                            <input type="text" id="new-lol" placeholder="Add Lead Name" class="flex-1 bg-slate-50 border-0 rounded-xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-blue-500">
+                            <button onclick="addItem('lols', 'new-lol')" class="bg-blue-600 text-white px-6 rounded-xl font-bold text-lg hover:bg-blue-700">+</button>
+                        </div>
+                        <ul id="list-lols" class="grid grid-cols-1 sm:grid-cols-2 gap-3"></ul>
+                    </div>
+
+                    <!-- Mapping -->
+                    <div id="set-operators" class="setting-panel hidden space-y-6">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-xl font-bold">Assign Personnel</h3>
+                            <p class="text-xs text-slate-400 font-medium italic">Tip: Click pencil icon to edit brands</p>
+                        </div>
+                        
+                        <div class="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
+                            <h4 class="text-xs font-bold text-slate-500 uppercase tracking-wider">Create New Operator</h4>
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                <input type="text" id="new-lo-name" placeholder="Operator Name" class="bg-white border-0 rounded-xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-blue-500 shadow-sm">
+                                <select id="new-lo-lead" class="bg-white border-0 rounded-xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-blue-500 shadow-sm"></select>
+                            </div>
+                            <button onclick="addOperatorRelationship()" id="btn-save-operator" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100">Create Operator</button>
+                        </div>
+
+                        <div class="pt-2"><div id="list-los" class="space-y-6"></div></div>
+                    </div>
+
+                    <!-- Roles Personnel -->
+                    <div id="set-roles" class="setting-panel hidden space-y-8">
+                        <h3 class="text-xl font-bold">Role-Based Personnel</h3>
+                        <div class="grid grid-cols-1 gap-8">
+                            <!-- AM List -->
+                            <div class="space-y-4">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account Managers</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="new-am-name" placeholder="New AM Name" class="flex-1 bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm">
+                                    <button onclick="addItem('ams', 'new-am-name')" class="bg-indigo-600 text-white px-4 rounded-xl font-bold">+</button>
+                                </div>
+                                <ul id="list-ams" class="flex flex-wrap gap-2"></ul>
+                            </div>
+                            <!-- AL List -->
+                            <div class="space-y-4">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account Leads</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="new-al-name" placeholder="New AL Name" class="flex-1 bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm">
+                                    <button onclick="addItem('als', 'new-al-name')" class="bg-indigo-600 text-white px-4 rounded-xl font-bold">+</button>
+                                </div>
+                                <ul id="list-als" class="flex flex-wrap gap-2"></ul>
+                            </div>
+                            <!-- Host List -->
+                            <div class="space-y-4">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Live Hosts</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="new-host-name" placeholder="New Host Name" class="flex-1 bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm">
+                                    <button onclick="addItem('hosts', 'new-host-name')" class="bg-indigo-600 text-white px-4 rounded-xl font-bold">+</button>
+                                </div>
+                                <ul id="list-hosts" class="flex flex-wrap gap-2"></ul>
+                            </div>
+                            <!-- QA List -->
+                            <div class="space-y-4">
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Quality Assurance</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="new-qa-name" placeholder="New QA Name" class="flex-1 bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm">
+                                    <button onclick="addItem('qas', 'new-qa-name')" class="bg-indigo-600 text-white px-4 rounded-xl font-bold">+</button>
+                                </div>
+                                <ul id="list-qas" class="flex flex-wrap gap-2"></ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Backup & Restore Panel -->
+                    <div id="set-backup" class="setting-panel hidden space-y-8">
+                        <h3 class="text-xl font-bold">Data Management</h3>
+                        
+                        <div class="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
+                            <div>
+                                <h4 class="text-sm font-bold text-slate-900">Backup Data</h4>
+                                <p class="text-xs text-slate-500 mt-1">Download a copy of all your records and settings to your device.</p>
+                            </div>
+                            <button onclick="backupData()" class="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-black transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Download Backup
+                            </button>
+                        </div>
+
+                        <div class="bg-red-50 p-6 rounded-[2rem] border border-red-100 space-y-4">
+                            <div>
+                                <h4 class="text-sm font-bold text-red-900">Restore Data</h4>
+                                <p class="text-xs text-red-500 mt-1">Upload a backup file to restore your data. <strong>Warning: This will replace all current data.</strong></p>
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="file" id="restore-file" accept=".json" class="flex-1 bg-white border-0 rounded-xl px-4 py-3 text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-red-100 file:text-red-700">
+                                <button onclick="restoreData()" class="bg-red-600 text-white px-6 rounded-xl font-bold text-sm hover:bg-red-700 shadow-lg shadow-red-200">Restore</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- CUSTOM SEARCHABLE SELECT TEMPLATE -->
+    <div id="search-select-template" class="hidden">
+        <div class="relative w-full custom-search-select" data-id="">
+            <div class="flex items-center justify-between w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm cursor-pointer select-btn border border-transparent hover:border-slate-200">
+                <span class="selected-text text-slate-400">Select...</span>
+                <svg class="h-4 w-4 text-slate-400 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" /></svg>
+            </div>
+            <div class="dropdown-content">
+                <div class="p-2 sticky top-0 bg-white border-b border-slate-50">
+                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 dropdown-search">
+                </div>
+                <div class="items-list pb-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: CREATE/EDIT CALL-OUT -->
+    <div id="callout-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[60] flex items-center justify-center p-4 modal-overlay opacity-0">
+        <div class="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
+            <div class="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                <h2 id="modal-title" class="text-2xl font-black text-slate-900 tracking-tight">Post Log</h2>
+                <button onclick="toggleModal('callout-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
+            </div>
+            <form id="callout-form" class="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+                <input type="hidden" id="edit-index" value="-1">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Timestamp (PHT)</label>
+                        <input type="datetime-local" id="form-datetime" name="datetime" required class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm">
+                    </div>
+                    <div class="space-y-2" id="brand-select-container">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Target Brand</label>
+                    </div>
+                    <div class="space-y-2" id="reporter-select-container">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Reporting Person</label>
+                    </div>
+                    <div class="space-y-2" id="lol-select-container">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Team Lead</label>
+                    </div>
+                    <div class="space-y-2" id="lo-select-container">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Operator</label>
+                    </div>
+                    <div class="space-y-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Evidence Upload</label>
+                        <input type="file" id="form-proof" accept="image/*" class="w-full text-xs text-slate-500 file:mr-4 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:bg-blue-600 file:text-white file:font-bold">
+                    </div>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Incident Reason</label>
+                    <textarea name="reason" id="form-reason" required rows="3" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Details of the call-out..."></textarea>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Corrective Remarks</label>
+                    <textarea name="remarks" id="form-remarks" rows="2" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Feedback from Lead..."></textarea>
+                </div>
+            </form>
+            <div class="p-8 bg-slate-50/50 border-t border-slate-100 flex gap-4">
+                <button type="button" onclick="toggleModal('callout-modal', false)" class="flex-1 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500">Cancel</button>
+                <button type="submit" form="callout-form" id="modal-submit-btn" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-100">Confirm Log</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL: EDIT OPERATOR (New Feature) -->
+    <div id="edit-operator-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[70] flex items-center justify-center p-4 modal-overlay opacity-0">
+        <div class="bg-white rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
+            <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                <h2 class="text-xl font-black text-slate-900">Edit Operator</h2>
+                <button onclick="toggleModal('edit-operator-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
+            </div>
+            <div class="p-6 space-y-6">
+                <input type="hidden" id="edit-op-original-name">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Operator Name</label>
+                    <input type="text" id="edit-op-name" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Team Lead</label>
+                    <select id="edit-op-lead" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500"></select>
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Brands</label>
+                    <div id="edit-op-brands" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto bg-slate-50 p-3 rounded-xl border border-slate-100">
+                        <!-- Checkboxes will be injected here -->
+                    </div>
+                </div>
+            </div>
+            <div class="p-6 bg-slate-50/50 border-t border-slate-100 flex gap-3">
+                <button onclick="toggleModal('edit-operator-modal', false)" class="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-500">Cancel</button>
+                <button onclick="saveOperatorChanges()" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- CUSTOM APP MODAL: ALERT/CONFIRM -->
+    <div id="app-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md hidden z-[100] flex items-center justify-center p-4 modal-overlay opacity-0">
+        <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl modal-container opacity-0 scale-90 p-8 space-y-6 text-center">
+            <div id="app-modal-icon" class="flex justify-center"></div>
+            <div class="space-y-2">
+                <h3 id="app-modal-title" class="text-xl font-extrabold text-slate-900">Confirm Action</h3>
+                <p id="app-modal-message" class="text-sm text-slate-500 font-medium">Are you sure you want to proceed?</p>
+            </div>
+            <div id="app-modal-actions" class="flex gap-3 pt-2"></div>
+        </div>
+    </div>
+
+    <div id="toast" class="fixed bottom-10 right-10 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl translate-y-32 transition-transform duration-300 z-[120] font-bold text-sm"></div>
+
+    <script>
+        // --- 1. CORE UTILITY FUNCTIONS ---
+        
+        // Changed keys to v4 to ensure a fresh, empty start
+        let records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
+        let config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
+            brands: [],
+            lols: [],
+            los: [],
+            ams: [],
+            als: [],
+            hosts: [],
+            qas: []
+        };
+        let currentLogFilter = 'All';
+        let isInitialized = false;
+
+        function saveConfig() { localStorage.setItem('callout_config_v4', JSON.stringify(config)); }
+        function saveRecords() { localStorage.setItem('callout_records_v4', JSON.stringify(records)); }
+
+        function getPHTISOString() {
+            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+            const p = formatter.formatToParts(new Date()).reduce((acc, v) => ({...acc, [v.type]: v.value}), {});
+            return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+        }
+
+        const roleCategories = [
+            { id: 'ams', label: 'Account Manager' },
+            { id: 'als', label: 'Account Lead' },
+            { id: 'hosts', label: 'Live Host' },
+            { id: 'qas', label: 'Quality Assurance' }
+        ];
+
+        const customSelects = {
+            brand: null,
+            reporter: null,
+            lol: null,
+            lo: null
+        };
+
+        // --- 2. MODAL & SEARCH LOGIC ---
+
+        function toggleModal(id, show) {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const container = el.querySelector('.modal-container');
+            
+            if (show) {
+                el.classList.remove('hidden');
+                // Allow browser paint to process removal of hidden before applying opacity transition
+                requestAnimationFrame(() => {
+                    el.classList.remove('opacity-0');
+                    if(container) {
+                        container.classList.remove('scale-90', 'opacity-0');
+                    }
+                });
+            } else {
+                el.classList.add('opacity-0');
+                if(container) {
+                    container.classList.add('scale-90', 'opacity-0');
+                }
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        const AppModal = {
+            resolve: null,
+            show(title, message, type = 'confirm') {
+                return new Promise((res) => {
+                    this.resolve = res;
+                    const overlay = document.getElementById('app-modal');
+                    const container = overlay.querySelector('.modal-container');
+                    const actions = document.getElementById('app-modal-actions');
+                    const iconCont = document.getElementById('app-modal-icon');
+                    
+                    document.getElementById('app-modal-title').innerText = title;
+                    document.getElementById('app-modal-message').innerText = message;
+                    
+                    iconCont.innerHTML = type === 'confirm' ? `
+                        <div class="p-4 bg-blue-50 text-blue-600 rounded-full">
+                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </div>
+                    ` : `
+                        <div class="p-4 bg-green-50 text-green-600 rounded-full">
+                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
+                        </div>
+                    `;
+
+                    actions.innerHTML = type === 'confirm' ? `
+                        <button onclick="AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button>
+                        <button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">Proceed</button>
+                    ` : `
+                        <button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">Okay</button>
+                    `;
+
+                    overlay.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        overlay.classList.remove('opacity-0');
+                        container.classList.remove('scale-90', 'opacity-0');
+                    });
+                });
+            },
+            handle(value) {
+                const overlay = document.getElementById('app-modal');
+                const container = overlay.querySelector('.modal-container');
+                overlay.classList.add('opacity-0');
+                container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    this.resolve(value);
+                }, 300);
+            }
+        };
+
+        function buildSearchSelect(containerId, options, initialValue = '', onSelect = null) {
+            const container = document.getElementById(containerId);
+            if (!container) return null;
+
+            let selectDiv = container.querySelector('.custom-search-select');
+            let isNew = false;
+
+            if (!selectDiv) {
+                const template = document.getElementById('search-select-template').cloneNode(true);
+                selectDiv = template.querySelector('.custom-search-select');
+                const label = container.querySelector('label');
+                container.innerHTML = ''; 
+                if (label) container.appendChild(label);
+                container.appendChild(selectDiv);
+                isNew = true;
+            }
+
+            const searchInput = selectDiv.querySelector('.dropdown-search');
+            const listContainer = selectDiv.querySelector('.items-list');
+            const selectBtn = selectDiv.querySelector('.select-btn');
+            const selectedText = selectDiv.querySelector('.selected-text');
+            
+            selectDiv.dataset.value = initialValue;
+            if(initialValue) {
+                selectedText.innerText = initialValue;
+                selectedText.classList.remove('text-slate-400');
+            } else {
+                selectedText.innerText = "Select...";
+                selectedText.classList.add('text-slate-400');
+            }
+
+            const renderList = (filter = '') => {
+                listContainer.innerHTML = '';
+                const filtered = options.filter(o => o.label.toLowerCase().includes(filter.toLowerCase()));
+                
+                if(filtered.length === 0) {
+                    listContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 italic text-center">No results found</div>`;
+                    return;
+                }
+
+                filtered.forEach(o => {
+                    const item = document.createElement('div');
+                    item.className = 'dropdown-item';
+                    item.innerHTML = o.isCategory ? `<div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">${o.label}</div>` : o.label;
+                    if(!o.isCategory) {
+                        item.onclick = (e) => {
+                            e.stopPropagation();
+                            selectDiv.dataset.value = o.label;
+                            selectedText.innerText = o.label;
+                            selectedText.classList.remove('text-slate-400');
+                            selectDiv.querySelector('.dropdown-content').classList.remove('show');
+                            if(onSelect) onSelect(o.label);
+                        };
+                    } else {
+                        item.classList.add('bg-slate-50', 'pointer-events-none', 'mt-2', 'first:mt-0');
+                    }
+                    listContainer.appendChild(item);
+                });
+            };
+
+            if (isNew) {
+                selectBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    document.querySelectorAll('.dropdown-content').forEach(d => {
+                        if(d !== selectDiv.querySelector('.dropdown-content')) d.classList.remove('show');
+                    });
+                    selectDiv.querySelector('.dropdown-content').classList.toggle('show');
+                    searchInput.focus();
+                    renderList('');
+                };
+                searchInput.oninput = (e) => renderList(e.target.value);
+            }
+
+            return {
+                getValue: () => selectDiv.dataset.value,
+                setValue: (val) => {
+                    selectDiv.dataset.value = val;
+                    selectedText.innerText = val || 'Select...';
+                    if(!val) selectedText.classList.add('text-slate-400');
+                    else selectedText.classList.remove('text-slate-400');
+                },
+                refresh: (newOptions) => {
+                    options = newOptions;
+                    renderList('');
+                }
+            };
+        }
+
+        window.onclick = () => {
+            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
+        };
+
+        // --- 3. INIT & NAVIGATION ---
+
+        window.onload = () => {
+            try {
+                // Migration check for old data without brands array
+                config.los.forEach(lo => { if(!lo.brands) lo.brands = []; });
+                saveConfig();
+
+                initSearchSelects();
+                renderAll();
+                showSection('dashboard');
+                isInitialized = true;
+            } catch (e) {
+                console.error("Init Error:", e);
+            }
+        };
+
+        function initSearchSelects() {
+            const brandOpts = config.brands.sort().map(b => ({ label: b }));
+            customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => {
+                autoSelectOperatorByBrand(brandName);
+            });
+
+            const reporterOpts = [];
+            roleCategories.forEach(cat => {
+                const names = [...(config[cat.id] || [])].sort();
+                if(names.length > 0) {
+                    reporterOpts.push({ label: cat.label, isCategory: true });
+                    names.forEach(n => reporterOpts.push({ label: n }));
+                }
+            });
+            customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
+
+            const leadOpts = config.lols.sort().map(l => ({ label: l }));
+            customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => {
+                refreshOperatorSelect(val);
+            });
+
+            customSelects.lo = buildSearchSelect('lo-select-container', []);
+        }
+
+        function refreshOperatorSelect(leadName) {
+            const filtered = config.los.filter(o => o.lead === leadName).sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
+            if(customSelects.lo) {
+                customSelects.lo.refresh(filtered);
+                customSelects.lo.setValue('');
+            }
+        }
+
+        function autoSelectOperatorByBrand(brandName) {
+            const assignedOps = config.los.filter(o => o.brands && o.brands.includes(brandName));
+            
+            if (assignedOps.length > 0) {
+                const uniqueLeads = [...new Set(assignedOps.map(o => o.lead))];
+                
+                if (uniqueLeads.length === 1) {
+                    const leadName = uniqueLeads[0];
+                    if (customSelects.lol) customSelects.lol.setValue(leadName);
+                    
+                    const brandSpecificOps = assignedOps.sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
+                    
+                    if (customSelects.lo) {
+                        customSelects.lo.refresh(brandSpecificOps);
+                        if (brandSpecificOps.length === 1) {
+                            customSelects.lo.setValue(brandSpecificOps[0].label);
+                            showToast("Auto-selected assigned operator.");
+                        } else {
+                            customSelects.lo.setValue('');
+                            showToast("Please select the specific operator for this brand.");
+                        }
+                    }
+                } else {
+                    if (customSelects.lol) customSelects.lol.setValue('');
+                    if (customSelects.lo) {
+                        customSelects.lo.refresh([]);
+                        customSelects.lo.setValue('');
+                    }
+                }
+            } else {
+                if (customSelects.lol) customSelects.lol.setValue('');
+                if (customSelects.lo) {
+                    customSelects.lo.refresh([]);
+                    customSelects.lo.setValue('');
+                }
+            }
+        }
+
+        function showSection(id) {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active-tab'));
+            const sectionMap = ['dashboard', 'record-log', 'settings'];
+            const index = sectionMap.indexOf(id);
+            if(index !== -1) {
+                const desktopLinks = document.querySelectorAll('.nav-link');
+                if(desktopLinks[index]) desktopLinks[index].classList.add('active-tab');
+            }
+            if(id === 'record-log') { renderLogTabs(); renderLogs(); }
+            if(id === 'dashboard') { renderDashboard(); }
+        }
+
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('.setting-tab').forEach(t => t.classList.remove('bg-blue-50', 'text-blue-600'));
+            document.querySelectorAll('.setting-tab').forEach(t => t.classList.add('text-slate-500'));
+            const activeTab = document.getElementById(`tab-${tab}`);
+            if(activeTab) {
+                activeTab.classList.remove('text-slate-500');
+                activeTab.classList.add('bg-blue-50', 'text-blue-600');
+            }
+            document.querySelectorAll('.setting-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById(`set-${tab}`).classList.remove('hidden');
+        }
+
+        function handleDashboardFilterChange() {
+            const filterType = document.getElementById('dashboard-filter').value;
+            const monthPicker = document.getElementById('dashboard-month-picker');
+            
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    monthPicker.value = `${now.getFullYear()}-${month}`;
+                }
+            } else {
+                monthPicker.classList.add('hidden');
+            }
+            renderDashboard();
+        }
+
+        function openCalloutModal(editIdx = -1) {
+            try {
+                if (!isInitialized || !customSelects.brand) {
+                    initSearchSelects(); 
+                    isInitialized = true;
+                }
+
+                const form = document.getElementById('callout-form');
+                const submitBtn = document.getElementById('modal-submit-btn');
+                const title = document.getElementById('modal-title');
+                document.getElementById('edit-index').value = editIdx;
+                
+                form.reset();
+                
+                if (editIdx > -1) {
+                    const r = records[editIdx];
+                    title.innerText = "Revise Entry";
+                    submitBtn.innerText = "Apply Changes";
+                    document.getElementById('form-datetime').value = r.datetime;
+                    
+                    if(customSelects.brand) customSelects.brand.setValue(r.brand);
+                    if(customSelects.reporter) customSelects.reporter.setValue(r.who);
+                    if(customSelects.lol) customSelects.lol.setValue(r.lol);
+                    refreshOperatorSelect(r.lol);
+                    if(customSelects.lo) customSelects.lo.setValue(r.lo);
+                    
+                    document.getElementById('form-reason').value = r.reason;
+                    document.getElementById('form-remarks').value = r.remarks;
+                } else {
+                    title.innerText = "New Call-Out Log";
+                    submitBtn.innerText = "Confirm Record";
+                    document.getElementById('form-datetime').value = getPHTISOString();
+                    
+                    if(customSelects.brand) customSelects.brand.setValue('');
+                    if(customSelects.reporter) customSelects.reporter.setValue('');
+                    if(customSelects.lol) customSelects.lol.setValue('');
+                    if(customSelects.lo) customSelects.lo.setValue('');
+                }
+                toggleModal('callout-modal', true);
+            } catch (e) {
+                console.error("Open Modal Error:", e);
+                alert("Issue opening the form. Please refresh.");
+            }
+        }
+
+        // --- 4. RENDERERS ---
+
+        function renderAll() {
+            renderDashboard();
+            renderLogTabs();
+            renderLogs();
+            renderSettings();
+            populateSelects();
+        }
+
+        function renderDashboard() {
+            const filterType = document.getElementById('dashboard-filter') ? document.getElementById('dashboard-filter').value : 'overall';
+            const monthPickerValue = document.getElementById('dashboard-month-picker') ? document.getElementById('dashboard-month-picker').value : '';
+            
+            const now = new Date();
+            let targetMonth, targetYear;
+            let filterLabel = 'Overall';
+
+            // Filter Records Logic
+            let filteredRecords = records;
+
+            if (filterType === 'current_month') {
+                targetMonth = now.getMonth();
+                targetYear = now.getFullYear();
+                filterLabel = 'This Month';
+                
+                filteredRecords = records.filter(r => {
+                    const d = new Date(r.datetime);
+                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                });
+            } else if (filterType === 'specific_month' && monthPickerValue) {
+                const [yearStr, monthStr] = monthPickerValue.split('-');
+                targetYear = parseInt(yearStr);
+                targetMonth = parseInt(monthStr) - 1; // 0-indexed
+                
+                const dateObj = new Date(targetYear, targetMonth);
+                filterLabel = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+                filteredRecords = records.filter(r => {
+                    const d = new Date(r.datetime);
+                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                });
+            } else {
+                filterLabel = 'Lifetime Total';
+            }
+
+            const total = filteredRecords.length;
+            const todayCount = records.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
+            
+            document.getElementById('label-total').innerText = filterLabel;
+            document.getElementById('stat-total').innerText = total;
+            document.getElementById('stat-today').innerText = todayCount;
+            document.getElementById('coaching-period-label').innerText = filterType === 'overall' ? 'Overall' : filterLabel;
+
+            if(filteredRecords.length > 0) {
+                const brands = filteredRecords.map(r => r.brand);
+                const mostBrand = brands.sort((a,b) => brands.filter(v => v===a).length - brands.filter(v => v===b).length).pop();
+                document.getElementById('stat-brand').innerText = mostBrand || '-';
+                
+                const reporters = filteredRecords.map(r => r.who);
+                const mostWho = reporters.sort((a,b) => reporters.filter(v => v===a).length - reporters.filter(v => v===b).length).pop();
+                document.getElementById('stat-who').innerText = mostWho || '-';
+            } else {
+                document.getElementById('stat-brand').innerText = '-';
+                document.getElementById('stat-who').innerText = '-';
+            }
+
+            // Recent Activity (Use Filtered Records)
+            const recentBody = document.getElementById('recent-table-body');
+            recentBody.innerHTML = '';
+            const recentToShow = filteredRecords.slice().reverse().slice(0, 8);
+            
+            if(recentToShow.length === 0) {
+                recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found for this period</td></tr>`;
+            } else {
+                recentToShow.forEach(r => {
+                    const originalIdx = records.indexOf(r);
+                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+                    recentBody.innerHTML += `
+                        <tr class="clickable-row" onclick="openCalloutModal(${originalIdx})">
+                            <td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td>
+                            <td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td>
+                            <td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td>
+                            <td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td>
+                            <td class="px-8 py-5 text-right whitespace-nowrap">
+                                <div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter">${r.lol}</div>
+                                <div class="text-[9px] font-bold text-slate-400 uppercase">${r.lo}</div>
+                            </td>
+                        </tr>`;
+                });
+            }
+
+            // Coaching Priority (Use Filtered Records)
+            const coachingContainer = document.getElementById('coaching-list');
+            if(coachingContainer) {
+                const operatorCounts = {};
+                filteredRecords.forEach(r => {
+                    if(r.lo) operatorCounts[r.lo] = (operatorCounts[r.lo] || 0) + 1;
+                });
+
+                const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a).slice(0, 6);
+                coachingContainer.innerHTML = '';
+                if(sortedOperators.length === 0) {
+                    coachingContainer.innerHTML = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded for this period</div>`;
+                } else {
+                    const maxCount = sortedOperators[0][1];
+                    sortedOperators.forEach(([name, count], index) => {
+                        const percentage = (count / maxCount) * 100;
+                        const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : 'bg-blue-400');
+                        coachingContainer.innerHTML += `
+                            <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                <div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm">${index + 1}</div>
+                                <div class="flex-1">
+                                    <div class="flex justify-between items-center mb-1">
+                                        <span class="text-xs font-bold text-slate-700 truncate max-w-[100px]">${name}</span>
+                                        <span class="text-[10px] font-black text-slate-400">${count} Calls</span>
+                                    </div>
+                                    <div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                        <div class="h-full ${barColor} rounded-full transition-all duration-500" style="width: ${percentage}%"></div>
+                                    </div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                }
+            }
+        }
+
+        function renderLogTabs() {
+            const container = document.getElementById('lol-filter-container');
+            const lols = ['All', ...[...config.lols].sort()];
+            container.innerHTML = '';
+            lols.forEach(lol => {
+                const count = lol === 'All' ? records.length : records.filter(r => r.lol === lol).length;
+                const isActive = currentLogFilter === lol;
+                container.innerHTML += `
+                    <button onclick="setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
+                        ${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span>
+                    </button>`;
+            });
+        }
+
+        function setLogFilter(lol) { currentLogFilter = lol; renderLogTabs(); renderLogs(); }
+
+        function renderLogs() {
+            const body = document.getElementById('full-log-body');
+            body.innerHTML = '';
+            const filtered = currentLogFilter === 'All' ? records : records.filter(r => r.lol === currentLogFilter);
+            if(filtered.length === 0) { body.innerHTML = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`; return; }
+
+            filtered.slice().reverse().forEach((r) => {
+                const idx = records.indexOf(r);
+                const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+                body.innerHTML += `
+                    <tr>
+                        <td class="px-6 py-6">
+                            ${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
+                        </td>
+                        <td class="px-6 py-6">
+                            <div class="font-bold text-slate-900">${date}</div>
+                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div>
+                        </td>
+                        <td class="px-6 py-6">
+                            <div class="font-bold text-slate-900">${r.brand}</div>
+                            <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div>
+                        </td>
+                        <td class="px-6 py-6">
+                            <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">${r.lol} / ${r.lo}</div>
+                            <div class="text-xs italic text-slate-500 font-medium mt-1">"${r.remarks || 'No remarks'}"</div>
+                        </td>
+                        <td class="px-6 py-6 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="openCalloutModal(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button onclick="deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>`;
+            });
+        }
+
+        function renderSettings() {
+            const renderList = (type, targetId) => {
+                const list = document.getElementById(targetId);
+                list.innerHTML = '';
+                [...config[type]].sort().forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = "flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all";
+                    li.innerHTML = `<span class="font-bold text-sm text-slate-700">${item}</span>`;
+                    const btn = document.createElement('button');
+                    btn.className = "text-red-300 hover:text-red-600 font-bold px-2 text-xl";
+                    btn.innerHTML = "&times;";
+                    btn.onclick = () => removeItem(type, item);
+                    li.appendChild(btn);
+                    list.appendChild(li);
+                });
+            };
+
+            renderList('brands', 'list-brands');
+            renderList('lols', 'list-lols');
+            renderList('ams', 'list-ams');
+            renderList('als', 'list-als');
+            renderList('hosts', 'list-hosts');
+            renderList('qas', 'list-qas');
+
+            const ocontainer = document.getElementById('list-los');
+            ocontainer.innerHTML = '';
+            [...config.lols].sort().forEach(lead => {
+                const leadOperators = [...config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
+                if (leadOperators.length > 0) {
+                    let group = document.createElement('div');
+                    group.className = "space-y-4";
+                    group.innerHTML = `<h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
+                    leadOperators.forEach(o => {
+                        let brandTags = (o.brands || []).map(b => `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">${b}</span>`).join('');
+                        let item = document.createElement('div');
+                        item.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4";
+                        item.innerHTML = `
+                            <div class="flex-1">
+                                <div class="font-bold text-slate-900">${o.name}</div>
+                                <div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div>
+                            </div>`;
+                        let acts = document.createElement('div');
+                        acts.className = "flex items-center gap-3 w-full sm:w-auto";
+                        
+                        let editBtn = document.createElement('button');
+                        editBtn.className = "p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold";
+                        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>`;
+                        editBtn.onclick = () => openEditOperatorModal(o.name);
+
+                        let del = document.createElement('button');
+                        del.className = "p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold";
+                        del.innerHTML = "&times;";
+                        del.onclick = () => removeItem('los', o.name);
+                        
+                        acts.appendChild(editBtn);
+                        acts.appendChild(del);
+                        item.appendChild(acts); group.querySelector('div').appendChild(item);
+                    });
+                    ocontainer.appendChild(group);
+                }
+            });
+        }
+
+        // --- 5. ACTION LOGIC ---
+
+        function backupData() {
+            const data = {
+                records: records,
+                config: config,
+                version: 'v4',
+                timestamp: new Date().toISOString()
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            saveAs(blob, `Callout_Backup_${new Date().toISOString().split('T')[0]}.json`);
+            showToast("Backup downloaded successfully.");
+        }
+
+        async function restoreData() {
+            const fileInput = document.getElementById('restore-file');
+            const file = fileInput.files[0];
+            
+            if (!file) {
+                showToast("Please select a file first.");
+                return;
+            }
+
+            const confirmed = await AppModal.show("Confirm Restore", "This will completely overwrite your current data. Are you sure?", 'confirm');
+            if (!confirmed) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.records && data.config) {
+                        records = data.records;
+                        config = data.config;
+                        saveRecords();
+                        saveConfig();
+                        
+                        // Re-initialize app
+                        renderAll();
+                        initSearchSelects();
+                        showToast("Data restored successfully.");
+                        fileInput.value = ''; // Reset input
+                    } else {
+                        showToast("Invalid backup file format.");
+                    }
+                } catch (err) {
+                    console.error(err);
+                    showToast("Error reading file.");
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function openEditOperatorModal(name) {
+            const op = config.los.find(o => o.name === name);
+            if(!op) return;
+
+            document.getElementById('edit-op-original-name').value = op.name;
+            document.getElementById('edit-op-name').value = op.name;
+            
+            const leadSelect = document.getElementById('edit-op-lead');
+            leadSelect.innerHTML = config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
+            leadSelect.value = op.lead;
+
+            // Generate Checkboxes
+            const brandsContainer = document.getElementById('edit-op-brands');
+            brandsContainer.innerHTML = '';
+            [...config.brands].sort().forEach(b => {
+                const isChecked = (op.brands || []).includes(b);
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer";
+                div.innerHTML = `
+                    <input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+                    <span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>
+                `;
+                div.onclick = (e) => {
+                    if (e.target.tagName !== 'INPUT') {
+                        const cb = div.querySelector('input');
+                        cb.checked = !cb.checked;
+                    }
+                };
+                brandsContainer.appendChild(div);
+            });
+
+            toggleModal('edit-operator-modal', true);
+        }
+
+        async function saveOperatorChanges() {
+            const originalName = document.getElementById('edit-op-original-name').value;
+            const newName = document.getElementById('edit-op-name').value.trim();
+            const newLead = document.getElementById('edit-op-lead').value;
+            const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
+
+            if (!newName) { showToast("Name is required"); return; }
+
+            const idx = config.los.findIndex(o => o.name === originalName);
+            if (idx === -1) return;
+
+            if (newName !== originalName && config.los.some(o => o.name === newName)) {
+                showToast("Operator Name already taken");
+                return;
+            }
+
+            const confirmed = await AppModal.show("Update Operator", `Save changes for ${originalName}?`, 'confirm');
+            if (confirmed) {
+                config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
+                saveConfig();
+                renderSettings();
+                populateSelects();
+                toggleModal('edit-operator-modal', false);
+                showToast("Operator updated successfully");
+            }
+        }
+
+        async function removeItem(type, id) {
+            const confirmed = await AppModal.show("Delete Item", `Are you sure you want to delete "${id}"? This cannot be undone.`, 'confirm');
+            if(confirmed) {
+                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) {
+                    config[type] = config[type].filter(item => item !== id);
+                } else if(type === 'los') {
+                    config.los = config.los.filter(o => o.name !== id);
+                }
+                saveConfig(); renderSettings(); populateSelects(); initSearchSelects(); showToast("Item deleted.");
+            }
+        }
+
+        async function addItem(type, inputId) {
+            const input = document.getElementById(inputId);
+            const val = input.value.trim();
+            if(!val) return;
+            if(config[type].includes(val)) { showToast("Name already exists."); return; }
+            
+            const confirmed = await AppModal.show("Add Entry", `Register "${val}" to database?`, 'confirm');
+            if(confirmed) {
+                config[type].push(val);
+                input.value = '';
+                saveConfig(); renderSettings(); populateSelects(); initSearchSelects(); showToast("Entry registered.");
+            }
+        }
+
+        async function addOperatorRelationship() {
+            const name = document.getElementById('new-lo-name').value.trim();
+            const lead = document.getElementById('new-lo-lead').value;
+            
+            if(name && lead) {
+                if(config.los.some(o => o.name === name)) { showToast("Operator name already registered."); return; }
+                const confirmed = await AppModal.show("Create Operator", `Add "${name}" under Team Lead "${lead}"?`, 'confirm');
+                if(confirmed) {
+                    config.los.push({ name, lead, brands: [] }); // Initialize with empty brands
+                    document.getElementById('new-lo-name').value = '';
+                    saveConfig(); renderSettings(); populateSelects(); showToast("Operator created. Click edit to assign brands.");
+                }
+            } else {
+                showToast("Please enter a name and select a lead.");
+            }
+        }
+
+        async function deleteRecord(index) {
+            const confirmed = await AppModal.show("Delete Record", "Are you sure you want to delete this record?", 'confirm');
+            if(confirmed) {
+                records.splice(index, 1);
+                saveRecords(); renderAll(); showToast("Record purged.");
+            }
+        }
+
+        function populateSelects() {
+            const sortedLeads = [...config.lols].sort();
+            document.getElementById('new-lo-lead').innerHTML = '<option value="">Select Team Lead</option>' + sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
+        }
+
+        document.getElementById('callout-form').onsubmit = async (e) => {
+            e.preventDefault();
+            const editIdx = parseInt(document.getElementById('edit-index').value);
+            const action = editIdx > -1 ? "Update" : "Save";
+
+            const brandVal = customSelects.brand.getValue();
+            const reporterVal = customSelects.reporter.getValue();
+            const lolVal = customSelects.lol.getValue();
+            const loVal = customSelects.lo.getValue();
+
+            if(!brandVal || !reporterVal || !lolVal || !loVal) {
+                await AppModal.show("Incomplete", "Please ensure all searchable fields (Brand, Reporter, Lead, and Operator) are selected.", 'alert');
+                return;
+            }
+
+            const confirmed = await AppModal.show("Confirm Log", `Save this report to history?`, 'confirm');
+            if(!confirmed) return;
+
+            const formData = new FormData(e.target);
+            const proofFile = document.getElementById('form-proof').files[0];
+            let proofBase64 = editIdx > -1 ? records[editIdx].proof : null;
+
+            if (proofFile) {
+                proofBase64 = await new Promise(r => { const rd = new FileReader(); rd.onloadend = () => r(rd.result); rd.readAsDataURL(proofFile); });
+            }
+
+            const recordData = {
+                datetime: formData.get('datetime'),
+                brand: brandVal,
+                who: reporterVal,
+                reason: formData.get('reason'),
+                lo: loVal,
+                lol: lolVal,
+                remarks: formData.get('remarks'),
+                proof: proofBase64,
+                timestamp: editIdx > -1 ? records[editIdx].timestamp : Date.now()
+            };
+
+            if (editIdx > -1) records[editIdx] = recordData;
+            else records.push(recordData);
+
+            saveRecords(); renderAll(); e.target.reset(); toggleModal('callout-modal', false); 
+            showToast(`Log entry finalized.`);
+        };
+
+        async function exportToExcel() {
+            if(!records.length) return showToast("No data to export.");
+            showToast("Preparing Excel file... please wait.");
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Call-outs');
+
+            worksheet.columns = [
+                { header: 'Timestamp (PHT)', key: 'datetime', width: 25 },
+                { header: 'Brand', key: 'brand', width: 20 },
+                { header: 'Reporter', key: 'who', width: 20 },
+                { header: 'Reason', key: 'reason', width: 30 },
+                { header: 'Team Lead', key: 'lol', width: 20 },
+                { header: 'Operator', key: 'lo', width: 20 },
+                { header: 'Remarks', key: 'remarks', width: 30 },
+                { header: 'Evidence', key: 'evidence', width: 20 }
+            ];
+
+            worksheet.getRow(1).font = { bold: true };
+            
+            for (let i = 0; i < records.length; i++) {
+                const r = records[i];
+                const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+                
+                const row = worksheet.addRow({
+                    datetime: date,
+                    brand: r.brand,
+                    who: r.who,
+                    reason: r.reason,
+                    lol: r.lol,
+                    lo: r.lo,
+                    remarks: r.remarks || "N/A",
+                    evidence: "" 
+                });
+
+                if (r.proof) {
+                    row.height = 100;
+                    try {
+                        const imageId = workbook.addImage({
+                            base64: r.proof,
+                            extension: 'png',
+                        });
+
+                        // 'twoCell' anchors the image to both the top-left and bottom-right of the cell
+                        // forcing it to stay strictly inside the grid.
+                        worksheet.addImage(imageId, {
+                            tl: { col: 7.05, row: row.number - 1 + 0.05 }, 
+                            br: { col: 7.95, row: row.number - 0.05 },
+                            editAs: 'twoCell' 
+                        });
+                    } catch(e) {
+                        console.error("Image add error", e);
+                    }
+                }
+            }
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            saveAs(blob, `Callout_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+            
+            showToast("Export successful!");
+        }
+
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('translate-y-32');
+            setTimeout(() => toast.classList.add('translate-y-32'), 3000);
+        }
+
+        function viewImage(src) {
+            const win = window.open("");
+            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
+        }
+    </script>
+</body>
+</html>
