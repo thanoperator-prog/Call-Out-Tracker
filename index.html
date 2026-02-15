@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Call-out Tracker | Cloud Sync</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- ExcelJS and FileSaver -->
@@ -12,11 +12,11 @@
     <!-- Firebase SDKs (Module based) -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- FIREBASE CONFIGURATION ---
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+        // --- FIREBASE CONFIGURATION (Fixed for Syncing) ---
+        const firebaseConfig = {
             apiKey: "AIzaSyCHtoVBSfdGap9I4B7gZJi1wlMdc6CHBgc",
             authDomain: "callouttracker.firebaseapp.com",
             projectId: "callouttracker",
@@ -26,14 +26,15 @@
             measurementId: "G-TY71KC8LTQ"
         };
         
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'callout-tracker-v1';
+        // CRITICAL: Using a fixed ID ensures all devices share the EXACT same data path.
+        const appId = 'callout-tracker-main-db';
         
         // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Global State (exposed to window for HTML handlers)
+        // Global State
         window.records = [];
         window.config = {
             brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
@@ -41,38 +42,43 @@
         window.isInitialized = false;
 
         // --- AUTH & LISTENERS ---
-        const initAuth = async () => {
-            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-                try {
-                    await signInWithCustomToken(auth, __initial_auth_token);
-                } catch (e) {
-                    console.warn("Custom token auth failed, trying anonymous.", e);
-                    await signInAnonymously(auth);
-                }
-            } else {
-                await signInAnonymously(auth);
-            }
-        };
-
-        initAuth();
+        // Simple Anonymous Auth for Shared Access
+        signInAnonymously(auth).catch((error) => {
+            console.error("Auth Error:", error);
+            updateStatus('error');
+        });
 
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 console.log("Connected as:", user.uid);
+                updateStatus('online');
                 setupRealtimeListeners();
+            } else {
+                updateStatus('offline');
             }
         });
 
+        function updateStatus(status) {
+            const el = document.getElementById('connection-status');
+            if(!el) return;
+            if (status === 'online') {
+                el.innerHTML = '<span class="flex h-3 w-3"><span class="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-green-400 opacity-75"></span><span class="relative inline-flex rounded-full h-3 w-3 bg-green-500"></span></span> <span class="text-xs text-green-600 font-bold ml-2">Synced</span>';
+            } else if (status === 'error') {
+                el.innerHTML = '<span class="h-3 w-3 rounded-full bg-red-500"></span> <span class="text-xs text-red-600 font-bold ml-2">Error</span>';
+            } else {
+                el.innerHTML = '<span class="h-3 w-3 rounded-full bg-gray-400"></span> <span class="text-xs text-gray-500 font-bold ml-2">Offline</span>';
+            }
+        }
+
         function setupRealtimeListeners() {
-            // 1. Listen to Settings (Config)
-            // Path: artifacts/{appId}/public/data/settings/global
+            // Listen to Settings
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
             
             onSnapshot(settingsRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.config = docSnap.data();
                 } else {
-                    // Initialize if empty
+                    // Initialize Default Config if it doesn't exist yet
                     const defaultConfig = {
                          brands: ['Apple Inc', 'Google Store'],
                         lols: ['Lead John', 'Lead Sarah'],
@@ -82,18 +88,18 @@
                         ],
                         ams: ['John Manager'], als: [], hosts: [], qas: []
                     };
-                    setDoc(settingsRef, defaultConfig).catch(err => console.error("Error creating init config:", err));
+                    setDoc(settingsRef, defaultConfig, { merge: true });
                     window.config = defaultConfig;
                 }
-                // Refresh UI components that depend on config
                 if(window.initSearchSelects) window.initSearchSelects(); 
                 if(window.renderSettings) window.renderSettings();
             }, (error) => {
                 console.error("Settings Sync Error:", error);
+                // Fallback to local storage if permission denied
+                window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || window.config;
             });
 
-            // 2. Listen to Records
-            // Path: artifacts/{appId}/public/data/records
+            // Listen to Records
             const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
             
             onSnapshot(recordsRef, (snapshot) => {
@@ -101,28 +107,26 @@
                     id: doc.id,
                     ...doc.data()
                 }));
-                
-                // Sort by datetime descending locally
                 loadedRecords.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
-                
                 window.records = loadedRecords;
                 window.isInitialized = true;
-                if(window.renderAll) window.renderAll(); // Refresh Dashboard and Logs
+                if(window.renderAll) window.renderAll(); 
             }, (error) => {
                 console.error("Records Sync Error:", error);
-                window.showToast("Error syncing records.");
+                // Fallback
+                window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
+                window.renderAll();
             });
         }
 
-        // --- EXPOSE FIREBASE ACTIONS TO WINDOW ---
-        
+        // --- EXPOSE ACTIONS ---
         window.saveFirebaseConfig = async function(newConfig) {
             try {
                 const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
                 await setDoc(settingsRef, newConfig);
             } catch(e) {
                 console.error("Save Config Error", e);
-                window.showToast("Failed to save settings.");
+                window.showToast("Failed to sync settings.");
             }
         };
 
@@ -158,7 +162,6 @@
                 window.showToast("Failed to delete.");
             }
         };
-
     </script>
 
     <style>
@@ -168,7 +171,6 @@
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
         
-        /* Dropdown Search UI */
         .dropdown-content { display: none; position: absolute; background-color: white; min-width: 100%; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1); z-index: 100; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 4px; max-height: 200px; overflow-y: auto; }
         .dropdown-content.show { display: block; }
         .dropdown-item { padding: 10px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
@@ -177,15 +179,16 @@
         tr.clickable-row { transition: all 0.2s ease; }
         tr.clickable-row:hover { background-color: #f8fafc; cursor: pointer; transform: scale(1.002); }
         
-        /* Custom Modal Transitions */
         .modal-overlay { transition: opacity 0.3s ease; }
         .modal-container { transition: transform 0.3s ease, opacity 0.3s ease; }
-
-        /* Mobile Active State */
         .mobile-active { color: #2563eb !important; }
+        
+        /* Mobile Safe Area Padding */
+        .safe-area-pb { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<body class="bg-[#f8fafc] text-slate-800 min-h-screen pb-20 md:pb-0">
+<!-- Increased bottom padding to prevent menu overlap -->
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen pb-24 lg:pb-0">
 
     <!-- Navigation -->
     <nav class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50 border-b border-slate-100">
@@ -197,14 +200,18 @@
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                         </svg>
                     </div>
-                    <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Call-out Tracker</span>
+                    <div class="flex flex-col">
+                        <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Call-out Tracker</span>
+                        <div id="connection-status" class="flex items-center">
+                            <span class="h-2 w-2 rounded-full bg-gray-300"></span> <span class="text-[10px] text-gray-400 ml-1">Connecting...</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="hidden md:flex space-x-10">
+                <div class="hidden lg:flex space-x-10">
                     <button onclick="showSection('dashboard')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Dashboard</button>
                     <button onclick="showSection('record-log')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Record Log</button>
                     <button onclick="showSection('settings')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Settings</button>
                 </div>
-                <!-- Export Button (Desktop: Full, Mobile: Icon only) -->
                 <button onclick="exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl shadow-green-200">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
                     <span class="hidden sm:inline">Export w/ Images</span>
@@ -214,33 +221,32 @@
     </nav>
 
     <!-- Mobile Bottom Nav -->
-    <div class="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 flex justify-around py-4 z-[51] shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center text-[10px] font-bold text-slate-400 mobile-active">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+    <!-- Z-Index 999 to stay on top, lg:hidden ensures it shows on phones/tablets, safe-area-pb for iPhones -->
+    <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around py-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
+        <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
             Dashboard
         </button>
-        <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center text-[10px] font-bold text-slate-400">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
+        <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01"/></svg>
             Log
         </button>
-        <button id="mob-settings" onclick="showSection('settings')" class="mobile-nav-btn flex flex-col items-center text-[10px] font-bold text-slate-400">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m12 4a2 2 0 100-4m0 4a2 2 0 110-4m-6 0a2 2 0 100-4m0 4a2 2 0 110-4"/></svg>
+        <button id="mob-settings" onclick="showSection('settings')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m12 4a2 2 0 100-4m0 4a2 2 0 110-4m-6 0a2 2 0 100-4m0 4a2 2 0 110-4"/></svg>
             Settings
         </button>
     </div>
 
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 mb-24 md:mb-0">
+    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 mb-24 lg:mb-0">
         
         <!-- SECTION: DASHBOARD -->
         <section id="dashboard" class="space-y-8 animate-in fade-in duration-500">
-            <!-- ... existing dashboard code ... -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 class="text-3xl font-extrabold text-slate-900">Operations Analytics</h1>
                     <p class="text-slate-500 mt-1">Real-time overview. Click any record to view or edit details.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <!-- Filter Dropdown -->
                     <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
                         <label for="dashboard-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</label>
                         <select id="dashboard-filter" onchange="handleDashboardFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer">
@@ -249,7 +255,6 @@
                             <option value="specific_month">Select Month & Year</option>
                         </select>
                     </div>
-                    <!-- Specific Month Picker (Hidden by default) -->
                     <input type="month" id="dashboard-month-picker" onchange="renderDashboard()" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
                 </div>
             </div>
@@ -443,7 +448,28 @@
                     <!-- Backup & Restore Panel -->
                     <div id="set-backup" class="setting-panel hidden space-y-8">
                         <h3 class="text-xl font-bold">Data Management</h3>
-                        <!-- ... -->
+                        
+                        <div class="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
+                            <div>
+                                <h4 class="text-sm font-bold text-slate-900">Backup Data</h4>
+                                <p class="text-xs text-slate-500 mt-1">Download a copy of all your records and settings to your device.</p>
+                            </div>
+                            <button onclick="backupData()" class="w-full sm:w-auto bg-slate-900 text-white px-6 py-3 rounded-xl font-bold text-sm hover:bg-black transition-all shadow-lg shadow-slate-200 flex items-center justify-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                Download Backup
+                            </button>
+                        </div>
+
+                        <div class="bg-red-50 p-6 rounded-[2rem] border border-red-100 space-y-4">
+                            <div>
+                                <h4 class="text-sm font-bold text-red-900">Restore Data</h4>
+                                <p class="text-xs text-red-500 mt-1">Upload a backup file to restore your data. <strong>Warning: This will replace all current data.</strong></p>
+                            </div>
+                            <div class="flex gap-2">
+                                <input type="file" id="restore-file" accept=".json" class="flex-1 bg-white border-0 rounded-xl px-4 py-3 text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-red-100 file:text-red-700">
+                                <button onclick="restoreData()" class="bg-red-600 text-white px-6 rounded-xl font-bold text-sm hover:bg-red-700 shadow-lg shadow-red-200">Restore</button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -531,7 +557,10 @@
                     <select id="edit-op-lead" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500"></select>
                 </div>
                 <div class="space-y-2">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Brands</label>
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Brands</label>
+                        <input type="text" id="brand-search-edit" oninput="filterBrandCheckboxes('brand-search-edit', 'edit-op-brands')" placeholder="Search brands..." class="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 w-1/3">
+                    </div>
                     <div id="edit-op-brands" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto bg-slate-50 p-3 rounded-xl border border-slate-100">
                         <!-- Checkboxes will be injected here -->
                     </div>
@@ -561,7 +590,6 @@
     <script>
         // --- 1. CORE UTILITY FUNCTIONS ---
         
-        // Changed keys to v4 to ensure a fresh, empty start
         let records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         let config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [],
@@ -806,8 +834,7 @@
             try {
                 // Migration check for old data without brands array
                 config.los.forEach(lo => { if(!lo.brands) lo.brands = []; });
-                // We don't saveConfig here to avoid overwriting cloud data immediately on load
-                // Cloud listeners will handle initial data population
+                saveConfig();
 
                 initSearchSelects();
                 renderAll();
@@ -1077,7 +1104,7 @@
                 recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found for this period</td></tr>`;
             } else {
                 recentToShow.forEach(r => {
-                    const originalIdx = records.indexOf(r); // Use index relative to full list for editing
+                    const originalIdx = records.indexOf(r);
                     const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
                     recentBody.innerHTML += `
                         <tr class="clickable-row" onclick="openCalloutModal(${originalIdx})">
