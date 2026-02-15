@@ -95,7 +95,11 @@
                 if(window.renderSettings) window.renderSettings();
             }, (error) => {
                 console.error("Settings Sync Error:", error);
-                // Fallback to local storage if permission denied
+                if (error.code === 'permission-denied') {
+                    if(window.showToast) window.showToast("Database Permission Denied. Check Firestore Rules.");
+                    updateStatus('error');
+                }
+                // Fallback to local storage if permission denied to allow UI to work offline
                 window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || window.config;
             });
 
@@ -113,6 +117,10 @@
                 if(window.renderAll) window.renderAll(); 
             }, (error) => {
                 console.error("Records Sync Error:", error);
+                if (error.code === 'permission-denied') {
+                     if(window.showToast) window.showToast("Database Permission Denied. Check Firestore Rules.");
+                     updateStatus('error');
+                }
                 // Fallback
                 window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
                 window.renderAll();
@@ -224,7 +232,7 @@
     <!-- Z-Index 999 to stay on top, lg:hidden ensures it shows on phones/tablets, safe-area-pb for iPhones -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around py-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z"/></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
@@ -590,6 +598,7 @@
     <script>
         // --- 1. CORE UTILITY FUNCTIONS ---
         
+        // Changed keys to v4 to ensure a fresh, empty start
         let records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         let config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [],
