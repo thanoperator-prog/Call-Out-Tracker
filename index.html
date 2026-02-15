@@ -3,11 +3,164 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Call-out Tracker | Pro</title>
+    <title>Call-out Tracker | Cloud Sync</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Updated Libraries for Robust Excel + Image Export -->
+    <!-- ExcelJS and FileSaver -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
+    
+    <!-- Firebase SDKs (Module based) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- FIREBASE CONFIGURATION ---
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {
+            apiKey: "AIzaSyCHtoVBSfdGap9I4B7gZJi1wlMdc6CHBgc",
+            authDomain: "callouttracker.firebaseapp.com",
+            projectId: "callouttracker",
+            storageBucket: "callouttracker.firebasestorage.app",
+            messagingSenderId: "628629412234",
+            appId: "1:628629412234:web:d1077eb4edfa2bdbad9073",
+            measurementId: "G-TY71KC8LTQ"
+        };
+        
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'callout-tracker-v1';
+        
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+
+        // Global State (exposed to window for HTML handlers)
+        window.records = [];
+        window.config = {
+            brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
+        };
+        window.isInitialized = false;
+
+        // --- AUTH & LISTENERS ---
+        const initAuth = async () => {
+            if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+                try {
+                    await signInWithCustomToken(auth, __initial_auth_token);
+                } catch (e) {
+                    console.warn("Custom token auth failed, trying anonymous.", e);
+                    await signInAnonymously(auth);
+                }
+            } else {
+                await signInAnonymously(auth);
+            }
+        };
+
+        initAuth();
+
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                console.log("Connected as:", user.uid);
+                setupRealtimeListeners();
+            }
+        });
+
+        function setupRealtimeListeners() {
+            // 1. Listen to Settings (Config)
+            // Path: artifacts/{appId}/public/data/settings/global
+            const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+            
+            onSnapshot(settingsRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    window.config = docSnap.data();
+                } else {
+                    // Initialize if empty
+                    const defaultConfig = {
+                         brands: ['Apple Inc', 'Google Store'],
+                        lols: ['Lead John', 'Lead Sarah'],
+                        los: [
+                            { name: 'Operator Alex', lead: 'Lead John', brands: ['Apple Inc'] }, 
+                            { name: 'Operator Bella', lead: 'Lead Sarah', brands: ['Google Store'] }
+                        ],
+                        ams: ['John Manager'], als: [], hosts: [], qas: []
+                    };
+                    setDoc(settingsRef, defaultConfig).catch(err => console.error("Error creating init config:", err));
+                    window.config = defaultConfig;
+                }
+                // Refresh UI components that depend on config
+                if(window.initSearchSelects) window.initSearchSelects(); 
+                if(window.renderSettings) window.renderSettings();
+            }, (error) => {
+                console.error("Settings Sync Error:", error);
+            });
+
+            // 2. Listen to Records
+            // Path: artifacts/{appId}/public/data/records
+            const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
+            
+            onSnapshot(recordsRef, (snapshot) => {
+                const loadedRecords = snapshot.docs.map(doc => ({
+                    id: doc.id,
+                    ...doc.data()
+                }));
+                
+                // Sort by datetime descending locally
+                loadedRecords.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+                
+                window.records = loadedRecords;
+                window.isInitialized = true;
+                if(window.renderAll) window.renderAll(); // Refresh Dashboard and Logs
+            }, (error) => {
+                console.error("Records Sync Error:", error);
+                window.showToast("Error syncing records.");
+            });
+        }
+
+        // --- EXPOSE FIREBASE ACTIONS TO WINDOW ---
+        
+        window.saveFirebaseConfig = async function(newConfig) {
+            try {
+                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
+                await setDoc(settingsRef, newConfig);
+            } catch(e) {
+                console.error("Save Config Error", e);
+                window.showToast("Failed to save settings.");
+            }
+        };
+
+        window.addFirebaseRecord = async function(recordData) {
+            try {
+                const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
+                await addDoc(recordsRef, recordData);
+                window.showToast("Record synced to cloud.");
+            } catch(e) {
+                console.error("Add Record Error", e);
+                window.showToast("Failed to save record.");
+            }
+        };
+
+        window.updateFirebaseRecord = async function(id, recordData) {
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', id);
+                await updateDoc(docRef, recordData);
+                window.showToast("Record updated.");
+            } catch(e) {
+                console.error("Update Record Error", e);
+                window.showToast("Failed to update.");
+            }
+        };
+
+        window.deleteFirebaseRecord = async function(id) {
+            try {
+                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', id);
+                await deleteDoc(docRef);
+                window.showToast("Record deleted.");
+            } catch(e) {
+                console.error("Delete Record Error", e);
+                window.showToast("Failed to delete.");
+            }
+        };
+
+    </script>
+
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
         body { font-family: 'Plus Jakarta Sans', sans-serif; scroll-behavior: smooth; }
@@ -378,7 +531,10 @@
                     <select id="edit-op-lead" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500"></select>
                 </div>
                 <div class="space-y-2">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Brands</label>
+                    <div class="flex justify-between items-center">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Assigned Brands</label>
+                        <input type="text" id="brand-search-edit" oninput="filterBrandCheckboxes('brand-search-edit', 'edit-op-brands')" placeholder="Search brands..." class="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs focus:ring-1 focus:ring-blue-500 w-1/3">
+                    </div>
                     <div id="edit-op-brands" class="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto bg-slate-50 p-3 rounded-xl border border-slate-100">
                         <!-- Checkboxes will be injected here -->
                     </div>
@@ -408,7 +564,6 @@
     <script>
         // --- 1. CORE UTILITY FUNCTIONS ---
         
-        // Changed keys to v4 to ensure a fresh, empty start
         let records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         let config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [],
@@ -609,6 +764,30 @@
             };
         }
 
+        function filterBrandCheckboxes(inputId, containerId) {
+            const input = document.getElementById(inputId);
+            const filter = input.value.toLowerCase();
+            const container = document.getElementById(containerId);
+            const items = container.children;
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const span = item.querySelector('span');
+                if (span) {
+                    const text = span.textContent || span.innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) {
+                        if(item.tagName === 'LABEL' || item.tagName === 'DIV') {
+                             item.classList.remove('hidden');
+                             item.style.display = "flex";
+                        }
+                    } else {
+                        item.classList.add('hidden');
+                        item.style.display = "none";
+                    }
+                }
+            }
+        }
+
         window.onclick = () => {
             document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
         };
@@ -632,9 +811,13 @@
 
         function initSearchSelects() {
             const brandOpts = config.brands.sort().map(b => ({ label: b }));
-            customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => {
-                autoSelectOperatorByBrand(brandName);
-            });
+            if (customSelects.brand) {
+                customSelects.brand.refresh(brandOpts);
+            } else {
+                customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => {
+                    autoSelectOperatorByBrand(brandName);
+                });
+            }
 
             const reporterOpts = [];
             roleCategories.forEach(cat => {
@@ -644,14 +827,26 @@
                     names.forEach(n => reporterOpts.push({ label: n }));
                 }
             });
-            customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
+            if (customSelects.reporter) {
+                customSelects.reporter.refresh(reporterOpts);
+            } else {
+                customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
+            }
 
             const leadOpts = config.lols.sort().map(l => ({ label: l }));
-            customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => {
-                refreshOperatorSelect(val);
-            });
+            if (customSelects.lol) {
+                customSelects.lol.refresh(leadOpts);
+            } else {
+                customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => {
+                    refreshOperatorSelect(val);
+                });
+            }
 
-            customSelects.lo = buildSearchSelect('lo-select-container', []);
+            if (customSelects.lo) {
+                customSelects.lo.refresh([]);
+            } else {
+                customSelects.lo = buildSearchSelect('lo-select-container', []);
+            }
         }
 
         function refreshOperatorSelect(leadName) {
@@ -1322,6 +1517,30 @@
         function viewImage(src) {
             const win = window.open("");
             win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
+        }
+
+        function filterBrandCheckboxes(inputId, containerId) {
+            const input = document.getElementById(inputId);
+            const filter = input.value.toLowerCase();
+            const container = document.getElementById(containerId);
+            const items = container.children;
+
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const span = item.querySelector('span');
+                if (span) {
+                    const text = span.textContent || span.innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) {
+                        if(item.tagName === 'LABEL' || item.tagName === 'DIV') {
+                             item.classList.remove('hidden');
+                             item.style.display = "flex";
+                        }
+                    } else {
+                        item.classList.add('hidden');
+                        item.style.display = "none";
+                    }
+                }
+            }
         }
     </script>
 </body>
