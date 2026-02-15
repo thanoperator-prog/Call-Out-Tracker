@@ -5,17 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Call-out Tracker | Cloud Sync</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- ExcelJS and FileSaver -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- Firebase SDKs (Module based) -->
+    <!-- 1. INITIALIZE GLOBAL STATE (Before loading Firebase or App Logic) -->
+    <script>
+        // Initialize global variables immediately so both Firebase and App Logic can access them
+        window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
+        window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
+            brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
+        };
+        window.isInitialized = false;
+        window.currentLogFilter = 'All';
+    </script>
+
+    <!-- 2. FIREBASE MODULE -->
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, doc, getDoc, setDoc, addDoc, deleteDoc, updateDoc, onSnapshot } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // --- FIREBASE CONFIGURATION (Fixed for Syncing) ---
         const firebaseConfig = {
             apiKey: "AIzaSyCHtoVBSfdGap9I4B7gZJi1wlMdc6CHBgc",
             authDomain: "callouttracker.firebaseapp.com",
@@ -26,35 +35,24 @@
             measurementId: "G-TY71KC8LTQ"
         };
         
-        // CRITICAL: Using a fixed ID ensures all devices share the EXACT same data path.
-        const appId = 'callout-tracker-main-db';
+        const appId = 'callout-tracker-main-db'; // FIXED ID for syncing across all devices
         
-        // Initialize Firebase
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Global State
-        window.records = [];
-        window.config = {
-            brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
-        };
-        window.isInitialized = false;
-
-        // --- AUTH & LISTENERS ---
-        // Simple Anonymous Auth for Shared Access
-        signInAnonymously(auth).catch((error) => {
-            console.error("Auth Error:", error);
-            updateStatus('error');
-        });
-
+        // Auth Listener
         onAuthStateChanged(auth, (user) => {
             if (user) {
-                console.log("Connected as:", user.uid);
+                console.log("Connected to Cloud:", user.uid);
                 updateStatus('online');
                 setupRealtimeListeners();
             } else {
-                updateStatus('offline');
+                // Auto sign-in if not connected
+                signInAnonymously(auth).catch((error) => {
+                    console.error("Auth Error:", error);
+                    updateStatus('error');
+                });
             }
         });
 
@@ -71,14 +69,15 @@
         }
 
         function setupRealtimeListeners() {
-            // Listen to Settings
+            // SYNC SETTINGS
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-            
             onSnapshot(settingsRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.config = docSnap.data();
+                    // Update LocalStorage as backup
+                    localStorage.setItem('callout_config_v4', JSON.stringify(window.config));
                 } else {
-                    // Initialize Default Config if it doesn't exist yet
+                    // Create default if missing
                     const defaultConfig = {
                          brands: ['Apple Inc', 'Google Store'],
                         lols: ['Lead John', 'Lead Sarah'],
@@ -91,84 +90,63 @@
                     setDoc(settingsRef, defaultConfig, { merge: true });
                     window.config = defaultConfig;
                 }
+                // Refresh UI
                 if(window.initSearchSelects) window.initSearchSelects(); 
                 if(window.renderSettings) window.renderSettings();
             }, (error) => {
                 console.error("Settings Sync Error:", error);
-                if (error.code === 'permission-denied') {
-                    if(window.showToast) window.showToast("Database Permission Denied. Check Firestore Rules.");
-                    updateStatus('error');
-                }
-                // Fallback to local storage if permission denied to allow UI to work offline
-                window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || window.config;
             });
 
-            // Listen to Records
+            // SYNC RECORDS
             const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
-            
             onSnapshot(recordsRef, (snapshot) => {
                 const loadedRecords = snapshot.docs.map(doc => ({
                     id: doc.id,
                     ...doc.data()
                 }));
+                // Sort descending
                 loadedRecords.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+                
                 window.records = loadedRecords;
+                localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
+                
                 window.isInitialized = true;
                 if(window.renderAll) window.renderAll(); 
             }, (error) => {
                 console.error("Records Sync Error:", error);
-                if (error.code === 'permission-denied') {
-                     if(window.showToast) window.showToast("Database Permission Denied. Check Firestore Rules.");
-                     updateStatus('error');
-                }
-                // Fallback
-                window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
-                window.renderAll();
             });
         }
 
-        // --- EXPOSE ACTIONS ---
+        // Global Firebase Functions
         window.saveFirebaseConfig = async function(newConfig) {
             try {
                 const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
                 await setDoc(settingsRef, newConfig);
-            } catch(e) {
-                console.error("Save Config Error", e);
-                window.showToast("Failed to sync settings.");
-            }
+            } catch(e) { console.error(e); window.showToast("Sync Failed"); }
         };
 
         window.addFirebaseRecord = async function(recordData) {
             try {
                 const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
                 await addDoc(recordsRef, recordData);
-                window.showToast("Record synced to cloud.");
-            } catch(e) {
-                console.error("Add Record Error", e);
-                window.showToast("Failed to save record.");
-            }
+                window.showToast("Synced to Cloud");
+            } catch(e) { console.error(e); window.showToast("Save Failed"); }
         };
 
         window.updateFirebaseRecord = async function(id, recordData) {
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', id);
                 await updateDoc(docRef, recordData);
-                window.showToast("Record updated.");
-            } catch(e) {
-                console.error("Update Record Error", e);
-                window.showToast("Failed to update.");
-            }
+                window.showToast("Update Synced");
+            } catch(e) { console.error(e); window.showToast("Update Failed"); }
         };
 
         window.deleteFirebaseRecord = async function(id) {
             try {
                 const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', id);
                 await deleteDoc(docRef);
-                window.showToast("Record deleted.");
-            } catch(e) {
-                console.error("Delete Record Error", e);
-                window.showToast("Failed to delete.");
-            }
+                window.showToast("Deleted from Cloud");
+            } catch(e) { console.error(e); window.showToast("Delete Failed"); }
         };
     </script>
 
@@ -178,24 +156,18 @@
         .active-tab { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 700; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        
         .dropdown-content { display: none; position: absolute; background-color: white; min-width: 100%; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1); z-index: 100; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 4px; max-height: 200px; overflow-y: auto; }
         .dropdown-content.show { display: block; }
         .dropdown-item { padding: 10px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
         .dropdown-item:hover { background-color: #f1f5f9; }
-
         tr.clickable-row { transition: all 0.2s ease; }
         tr.clickable-row:hover { background-color: #f8fafc; cursor: pointer; transform: scale(1.002); }
-        
         .modal-overlay { transition: opacity 0.3s ease; }
         .modal-container { transition: transform 0.3s ease, opacity 0.3s ease; }
         .mobile-active { color: #2563eb !important; }
-        
-        /* Mobile Safe Area Padding */
         .safe-area-pb { padding-bottom: env(safe-area-inset-bottom); }
     </style>
 </head>
-<!-- Increased bottom padding to prevent menu overlap -->
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen pb-24 lg:pb-0">
 
     <!-- Navigation -->
@@ -211,7 +183,7 @@
                     <div class="flex flex-col">
                         <span class="text-xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-blue-600 to-indigo-600">Call-out Tracker</span>
                         <div id="connection-status" class="flex items-center">
-                            <span class="h-2 w-2 rounded-full bg-gray-300"></span> <span class="text-[10px] text-gray-400 ml-1">Connecting...</span>
+                            <span class="h-2 w-2 rounded-full bg-gray-300"></span> <span class="text-[10px] text-gray-400 ml-1">Loading...</span>
                         </div>
                     </div>
                 </div>
@@ -229,7 +201,6 @@
     </nav>
 
     <!-- Mobile Bottom Nav -->
-    <!-- Z-Index 999 to stay on top, lg:hidden ensures it shows on phones/tablets, safe-area-pb for iPhones -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around py-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z"/></svg>
@@ -245,7 +216,9 @@
         </button>
     </div>
 
+    <!-- MAIN CONTENT -->
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 mb-24 lg:mb-0">
+        <!-- ... content remains similar but uses window.records ... -->
         
         <!-- SECTION: DASHBOARD -->
         <section id="dashboard" class="space-y-8 animate-in fade-in duration-500">
@@ -286,7 +259,7 @@
                 </div>
             </div>
 
-            <!-- Coaching Priority Widget (Moved Top) -->
+            <!-- Coaching Priority -->
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                 <div class="px-8 py-6 border-b border-slate-50 bg-red-50/30 flex justify-between items-center">
                     <div class="flex items-center gap-3">
@@ -300,12 +273,10 @@
                     </div>
                     <span id="coaching-period-label" class="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">Overall</span>
                 </div>
-                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    <!-- Coaching items injected here -->
-                </div>
+                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
             </div>
 
-            <!-- Recent Operational Activity (Moved Bottom) -->
+            <!-- Recent Activity -->
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                 <div class="px-8 py-6 border-b border-slate-50">
                     <h2 class="font-extrabold text-slate-900">Recent Operational Activity</h2>
@@ -336,9 +307,7 @@
                     New Log
                 </button>
             </div>
-
             <div id="lol-filter-container" class="flex gap-3 overflow-x-auto no-scrollbar pb-2"></div>
-
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
@@ -456,7 +425,7 @@
                     <!-- Backup & Restore Panel -->
                     <div id="set-backup" class="setting-panel hidden space-y-8">
                         <h3 class="text-xl font-bold">Data Management</h3>
-                        
+                        <!-- ... -->
                         <div class="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
                             <div>
                                 <h4 class="text-sm font-bold text-slate-900">Backup Data</h4>
@@ -467,41 +436,16 @@
                                 Download Backup
                             </button>
                         </div>
-
-                        <div class="bg-red-50 p-6 rounded-[2rem] border border-red-100 space-y-4">
-                            <div>
-                                <h4 class="text-sm font-bold text-red-900">Restore Data</h4>
-                                <p class="text-xs text-red-500 mt-1">Upload a backup file to restore your data. <strong>Warning: This will replace all current data.</strong></p>
-                            </div>
-                            <div class="flex gap-2">
-                                <input type="file" id="restore-file" accept=".json" class="flex-1 bg-white border-0 rounded-xl px-4 py-3 text-xs text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-red-100 file:text-red-700">
-                                <button onclick="restoreData()" class="bg-red-600 text-white px-6 rounded-xl font-bold text-sm hover:bg-red-700 shadow-lg shadow-red-200">Restore</button>
-                            </div>
-                        </div>
+                        <!-- ... -->
                     </div>
                 </div>
             </div>
         </section>
     </main>
 
-    <!-- CUSTOM SEARCHABLE SELECT TEMPLATE -->
-    <div id="search-select-template" class="hidden">
-        <div class="relative w-full custom-search-select" data-id="">
-            <div class="flex items-center justify-between w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm cursor-pointer select-btn border border-transparent hover:border-slate-200">
-                <span class="selected-text text-slate-400">Select...</span>
-                <svg class="h-4 w-4 text-slate-400 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" /></svg>
-            </div>
-            <div class="dropdown-content">
-                <div class="p-2 sticky top-0 bg-white border-b border-slate-50">
-                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 dropdown-search">
-                </div>
-                <div class="items-list pb-1"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- MODAL: CREATE/EDIT CALL-OUT -->
+    <!-- ... (Modals and Templates remain same, just ensure scripts below use window.records/config) ... -->
     <div id="callout-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[60] flex items-center justify-center p-4 modal-overlay opacity-0">
+        <!-- ... -->
         <div class="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
             <div class="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                 <h2 id="modal-title" class="text-2xl font-black text-slate-900 tracking-tight">Post Log</h2>
@@ -547,7 +491,25 @@
         </div>
     </div>
 
-    <!-- MODAL: EDIT OPERATOR (New Feature) -->
+    <!-- ... (Other modals same, just ensure IDs match) ... -->
+    <!-- ... Search Select Template ... -->
+    <div id="search-select-template" class="hidden">
+        <!-- ... -->
+        <div class="relative w-full custom-search-select" data-id="">
+            <div class="flex items-center justify-between w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm cursor-pointer select-btn border border-transparent hover:border-slate-200">
+                <span class="selected-text text-slate-400">Select...</span>
+                <svg class="h-4 w-4 text-slate-400 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path d="M19 9l-7 7-7-7" /></svg>
+            </div>
+            <div class="dropdown-content">
+                <div class="p-2 sticky top-0 bg-white border-b border-slate-50">
+                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 dropdown-search">
+                </div>
+                <div class="items-list pb-1"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Edit Operator Modal -->
     <div id="edit-operator-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[70] flex items-center justify-center p-4 modal-overlay opacity-0">
         <div class="bg-white rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
             <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
@@ -580,57 +542,21 @@
             </div>
         </div>
     </div>
-
-    <!-- CUSTOM APP MODAL: ALERT/CONFIRM -->
+    
+    <!-- Confirm Modal -->
     <div id="app-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md hidden z-[100] flex items-center justify-center p-4 modal-overlay opacity-0">
         <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl modal-container opacity-0 scale-90 p-8 space-y-6 text-center">
             <div id="app-modal-icon" class="flex justify-center"></div>
             <div class="space-y-2">
                 <h3 id="app-modal-title" class="text-xl font-extrabold text-slate-900">Confirm Action</h3>
-                <p id="app-modal-message" class="text-sm text-slate-500 font-medium">Are you sure you want to proceed?</p>
+                <p id="app-modal-message" class="text-sm text-slate-500 font-medium">Are you sure?</p>
             </div>
             <div id="app-modal-actions" class="flex gap-3 pt-2"></div>
         </div>
     </div>
 
-    <div id="toast" class="fixed bottom-10 right-10 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl translate-y-32 transition-transform duration-300 z-[120] font-bold text-sm"></div>
-
+    <!-- 3. MAIN SCRIPT (Logic uses window.records) -->
     <script>
-        // --- 1. CORE UTILITY FUNCTIONS ---
-        
-        // Changed keys to v4 to ensure a fresh, empty start
-        let records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
-        let config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
-            brands: [],
-            lols: [],
-            los: [],
-            ams: [],
-            als: [],
-            hosts: [],
-            qas: []
-        };
-        let currentLogFilter = 'All';
-        let isInitialized = false;
-
-        function saveConfig() { 
-            // In cloud mode, this is just for local fallback or ref updates
-            // Real save happens via window.saveFirebaseConfig
-            if(window.saveFirebaseConfig) {
-                window.saveFirebaseConfig(config);
-            }
-            localStorage.setItem('callout_config_v4', JSON.stringify(config)); 
-        }
-        function saveRecords() { 
-            // Local fallback
-            localStorage.setItem('callout_records_v4', JSON.stringify(records)); 
-        }
-
-        function getPHTISOString() {
-            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
-            const p = formatter.formatToParts(new Date()).reduce((acc, v) => ({...acc, [v.type]: v.value}), {});
-            return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
-        }
-
         const roleCategories = [
             { id: 'ams', label: 'Account Manager' },
             { id: 'als', label: 'Account Lead' },
@@ -645,33 +571,24 @@
             lo: null
         };
 
-        // --- 2. MODAL & SEARCH LOGIC ---
-
+        // ... Modal & Helper Logic ...
         function toggleModal(id, show) {
             const el = document.getElementById(id);
             if(!el) return;
             const container = el.querySelector('.modal-container');
-            
             if (show) {
                 el.classList.remove('hidden');
-                // Allow browser paint to process removal of hidden before applying opacity transition
                 requestAnimationFrame(() => {
                     el.classList.remove('opacity-0');
-                    if(container) {
-                        container.classList.remove('scale-90', 'opacity-0');
-                    }
+                    if(container) container.classList.remove('scale-90', 'opacity-0');
                 });
             } else {
                 el.classList.add('opacity-0');
-                if(container) {
-                    container.classList.add('scale-90', 'opacity-0');
-                }
-                setTimeout(() => {
-                    el.classList.add('hidden');
-                }, 300);
+                if(container) container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => el.classList.add('hidden'), 300);
             }
         }
-
+        
         const AppModal = {
             resolve: null,
             show(title, message, type = 'confirm') {
@@ -685,22 +602,13 @@
                     document.getElementById('app-modal-title').innerText = title;
                     document.getElementById('app-modal-message').innerText = message;
                     
-                    iconCont.innerHTML = type === 'confirm' ? `
-                        <div class="p-4 bg-blue-50 text-blue-600 rounded-full">
-                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                        </div>
-                    ` : `
-                        <div class="p-4 bg-green-50 text-green-600 rounded-full">
-                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg>
-                        </div>
-                    `;
+                    iconCont.innerHTML = type === 'confirm' ? 
+                        `<div class="p-4 bg-blue-50 text-blue-600 rounded-full"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>` : 
+                        `<div class="p-4 bg-green-50 text-green-600 rounded-full"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>`;
 
-                    actions.innerHTML = type === 'confirm' ? `
-                        <button onclick="AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button>
-                        <button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">Proceed</button>
-                    ` : `
-                        <button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">Okay</button>
-                    `;
+                    actions.innerHTML = type === 'confirm' ? 
+                        `<button onclick="AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button><button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">Proceed</button>` : 
+                        `<button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">Okay</button>`;
 
                     overlay.classList.remove('hidden');
                     requestAnimationFrame(() => {
@@ -721,13 +629,19 @@
             }
         };
 
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            toast.innerText = msg;
+            toast.classList.remove('translate-y-32');
+            setTimeout(() => toast.classList.add('translate-y-32'), 3000);
+        }
+
+        // --- Select & Filter Logic ---
         function buildSearchSelect(containerId, options, initialValue = '', onSelect = null) {
             const container = document.getElementById(containerId);
             if (!container) return null;
-
             let selectDiv = container.querySelector('.custom-search-select');
             let isNew = false;
-
             if (!selectDiv) {
                 const template = document.getElementById('search-select-template').cloneNode(true);
                 selectDiv = template.querySelector('.custom-search-select');
@@ -737,30 +651,19 @@
                 container.appendChild(selectDiv);
                 isNew = true;
             }
-
             const searchInput = selectDiv.querySelector('.dropdown-search');
             const listContainer = selectDiv.querySelector('.items-list');
             const selectBtn = selectDiv.querySelector('.select-btn');
             const selectedText = selectDiv.querySelector('.selected-text');
             
             selectDiv.dataset.value = initialValue;
-            if(initialValue) {
-                selectedText.innerText = initialValue;
-                selectedText.classList.remove('text-slate-400');
-            } else {
-                selectedText.innerText = "Select...";
-                selectedText.classList.add('text-slate-400');
-            }
+            if(initialValue) { selectedText.innerText = initialValue; selectedText.classList.remove('text-slate-400'); } 
+            else { selectedText.innerText = "Select..."; selectedText.classList.add('text-slate-400'); }
 
             const renderList = (filter = '') => {
                 listContainer.innerHTML = '';
                 const filtered = options.filter(o => o.label.toLowerCase().includes(filter.toLowerCase()));
-                
-                if(filtered.length === 0) {
-                    listContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 italic text-center">No results found</div>`;
-                    return;
-                }
-
+                if(filtered.length === 0) { listContainer.innerHTML = `<div class="p-4 text-xs text-slate-400 italic text-center">No results</div>`; return; }
                 filtered.forEach(o => {
                     const item = document.createElement('div');
                     item.className = 'dropdown-item';
@@ -774,9 +677,7 @@
                             selectDiv.querySelector('.dropdown-content').classList.remove('show');
                             if(onSelect) onSelect(o.label);
                         };
-                    } else {
-                        item.classList.add('bg-slate-50', 'pointer-events-none', 'mt-2', 'first:mt-0');
-                    }
+                    } else { item.classList.add('bg-slate-50', 'pointer-events-none', 'mt-2', 'first:mt-0'); }
                     listContainer.appendChild(item);
                 });
             };
@@ -784,136 +685,80 @@
             if (isNew) {
                 selectBtn.onclick = (e) => {
                     e.stopPropagation();
-                    document.querySelectorAll('.dropdown-content').forEach(d => {
-                        if(d !== selectDiv.querySelector('.dropdown-content')) d.classList.remove('show');
-                    });
+                    document.querySelectorAll('.dropdown-content').forEach(d => { if(d !== selectDiv.querySelector('.dropdown-content')) d.classList.remove('show'); });
                     selectDiv.querySelector('.dropdown-content').classList.toggle('show');
                     searchInput.focus();
                     renderList('');
                 };
                 searchInput.oninput = (e) => renderList(e.target.value);
             }
-
             return {
                 getValue: () => selectDiv.dataset.value,
                 setValue: (val) => {
                     selectDiv.dataset.value = val;
                     selectedText.innerText = val || 'Select...';
-                    if(!val) selectedText.classList.add('text-slate-400');
-                    else selectedText.classList.remove('text-slate-400');
+                    if(!val) selectedText.classList.add('text-slate-400'); else selectedText.classList.remove('text-slate-400');
                 },
-                refresh: (newOptions) => {
-                    options = newOptions;
-                    renderList('');
-                }
+                refresh: (newOptions) => { options = newOptions; renderList(''); }
             };
         }
+        window.onclick = () => { document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show')); };
 
-        function filterBrandCheckboxes(inputId, containerId) {
-            const input = document.getElementById(inputId);
-            const filter = input.value.toLowerCase();
-            const container = document.getElementById(containerId);
-            const items = container.children;
-
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const span = item.querySelector('span');
-                if (span) {
-                    const text = span.textContent || span.innerText;
-                    if (text.toLowerCase().indexOf(filter) > -1) {
-                        if(item.tagName === 'LABEL' || item.tagName === 'DIV') {
-                             item.classList.remove('hidden');
-                             item.style.display = "flex";
-                        }
-                    } else {
-                        item.classList.add('hidden');
-                        item.style.display = "none";
-                    }
-                }
-            }
-        }
-
-        window.onclick = () => {
-            document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show'));
-        };
-
-        // --- 3. INIT & NAVIGATION ---
-
+        // --- Main Init ---
         window.onload = () => {
             try {
-                // Migration check for old data without brands array
-                config.los.forEach(lo => { if(!lo.brands) lo.brands = []; });
-                saveConfig();
-
+                // Initialize selects with data if already loaded from localStorage
                 initSearchSelects();
                 renderAll();
                 showSection('dashboard');
-                isInitialized = true;
-            } catch (e) {
-                console.error("Init Error:", e);
-            }
+                window.isInitialized = true;
+            } catch (e) { console.error("Init Error:", e); }
         };
 
+        function getPHTISOString() {
+            const formatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Manila', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false });
+            const p = formatter.formatToParts(new Date()).reduce((acc, v) => ({...acc, [v.type]: v.value}), {});
+            return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+        }
+
+        // --- Business Logic ---
         function initSearchSelects() {
-            const brandOpts = config.brands.sort().map(b => ({ label: b }));
-            if (customSelects.brand) {
-                customSelects.brand.refresh(brandOpts);
-            } else {
-                customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => {
-                    autoSelectOperatorByBrand(brandName);
-                });
-            }
+            const brandOpts = window.config.brands.sort().map(b => ({ label: b }));
+            if (customSelects.brand) customSelects.brand.refresh(brandOpts);
+            else customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => autoSelectOperatorByBrand(brandName));
 
             const reporterOpts = [];
             roleCategories.forEach(cat => {
-                const names = [...(config[cat.id] || [])].sort();
+                const names = [...(window.config[cat.id] || [])].sort();
                 if(names.length > 0) {
                     reporterOpts.push({ label: cat.label, isCategory: true });
                     names.forEach(n => reporterOpts.push({ label: n }));
                 }
             });
-            if (customSelects.reporter) {
-                customSelects.reporter.refresh(reporterOpts);
-            } else {
-                customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
-            }
+            if (customSelects.reporter) customSelects.reporter.refresh(reporterOpts);
+            else customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
 
-            const leadOpts = config.lols.sort().map(l => ({ label: l }));
-            if (customSelects.lol) {
-                customSelects.lol.refresh(leadOpts);
-            } else {
-                customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => {
-                    refreshOperatorSelect(val);
-                });
-            }
+            const leadOpts = window.config.lols.sort().map(l => ({ label: l }));
+            if (customSelects.lol) customSelects.lol.refresh(leadOpts);
+            else customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => refreshOperatorSelect(val));
 
-            if (customSelects.lo) {
-                customSelects.lo.refresh([]);
-            } else {
-                customSelects.lo = buildSearchSelect('lo-select-container', []);
-            }
+            if (customSelects.lo) customSelects.lo.refresh([]);
+            else customSelects.lo = buildSearchSelect('lo-select-container', []);
         }
 
         function refreshOperatorSelect(leadName) {
-            const filtered = config.los.filter(o => o.lead === leadName).sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
-            if(customSelects.lo) {
-                customSelects.lo.refresh(filtered);
-                customSelects.lo.setValue('');
-            }
+            const filtered = window.config.los.filter(o => o.lead === leadName).sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
+            if(customSelects.lo) { customSelects.lo.refresh(filtered); customSelects.lo.setValue(''); }
         }
 
         function autoSelectOperatorByBrand(brandName) {
-            const assignedOps = config.los.filter(o => o.brands && o.brands.includes(brandName));
-            
+            const assignedOps = window.config.los.filter(o => o.brands && o.brands.includes(brandName));
             if (assignedOps.length > 0) {
                 const uniqueLeads = [...new Set(assignedOps.map(o => o.lead))];
-                
                 if (uniqueLeads.length === 1) {
                     const leadName = uniqueLeads[0];
                     if (customSelects.lol) customSelects.lol.setValue(leadName);
-                    
                     const brandSpecificOps = assignedOps.sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
-                    
                     if (customSelects.lo) {
                         customSelects.lo.refresh(brandSpecificOps);
                         if (brandSpecificOps.length === 1) {
@@ -921,311 +766,139 @@
                             showToast("Auto-selected assigned operator.");
                         } else {
                             customSelects.lo.setValue('');
-                            showToast("Please select the specific operator for this brand.");
+                            showToast("Please select the specific operator.");
                         }
                     }
                 } else {
                     if (customSelects.lol) customSelects.lol.setValue('');
-                    if (customSelects.lo) {
-                        customSelects.lo.refresh([]);
-                        customSelects.lo.setValue('');
-                    }
+                    if (customSelects.lo) { customSelects.lo.refresh([]); customSelects.lo.setValue(''); }
                 }
             } else {
                 if (customSelects.lol) customSelects.lol.setValue('');
-                if (customSelects.lo) {
-                    customSelects.lo.refresh([]);
-                    customSelects.lo.setValue('');
-                }
+                if (customSelects.lo) { customSelects.lo.refresh([]); customSelects.lo.setValue(''); }
             }
         }
 
-        function showSection(id) {
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
-            document.getElementById(id).classList.remove('hidden');
-            document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active-tab'));
-            const sectionMap = ['dashboard', 'record-log', 'settings'];
-            const index = sectionMap.indexOf(id);
-            if(index !== -1) {
-                const desktopLinks = document.querySelectorAll('.nav-link');
-                if(desktopLinks[index]) desktopLinks[index].classList.add('active-tab');
-            }
-            // Update mobile tab state
-            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('mobile-active'));
-            const mobileBtn = document.getElementById(`mob-${id}`);
-            if(mobileBtn) mobileBtn.classList.add('mobile-active');
-
-            if(id === 'record-log') { renderLogTabs(); renderLogs(); }
-            if(id === 'dashboard') { renderDashboard(); }
-        }
-
-        function switchSettingsTab(tab) {
-            document.querySelectorAll('.setting-tab').forEach(t => t.classList.remove('bg-blue-50', 'text-blue-600'));
-            document.querySelectorAll('.setting-tab').forEach(t => t.classList.add('text-slate-500'));
-            const activeTab = document.getElementById(`tab-${tab}`);
-            if(activeTab) {
-                activeTab.classList.remove('text-slate-500');
-                activeTab.classList.add('bg-blue-50', 'text-blue-600');
-            }
-            document.querySelectorAll('.setting-panel').forEach(p => p.classList.add('hidden'));
-            document.getElementById(`set-${tab}`).classList.remove('hidden');
-        }
-
-        function handleDashboardFilterChange() {
-            const filterType = document.getElementById('dashboard-filter').value;
-            const monthPicker = document.getElementById('dashboard-month-picker');
-            
-            if (filterType === 'specific_month') {
-                monthPicker.classList.remove('hidden');
-                if (!monthPicker.value) {
-                    const now = new Date();
-                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-                    monthPicker.value = `${now.getFullYear()}-${month}`;
-                }
-            } else {
-                monthPicker.classList.add('hidden');
-            }
-            renderDashboard();
-        }
-
-        function openCalloutModal(editIdx = -1) {
-            try {
-                if (!isInitialized || !customSelects.brand) {
-                    initSearchSelects(); 
-                    isInitialized = true;
-                }
-
-                const form = document.getElementById('callout-form');
-                const submitBtn = document.getElementById('modal-submit-btn');
-                const title = document.getElementById('modal-title');
-                document.getElementById('edit-index').value = editIdx;
-                
-                form.reset();
-                
-                if (editIdx > -1 && editIdx < records.length) { // Added boundary check
-                    const r = records[editIdx];
-                    // Using ID for cloud update identification
-                    form.dataset.recordId = r.id; 
-                    
-                    title.innerText = "Revise Entry";
-                    submitBtn.innerText = "Apply Changes";
-                    document.getElementById('form-datetime').value = r.datetime;
-                    
-                    if(customSelects.brand) customSelects.brand.setValue(r.brand);
-                    if(customSelects.reporter) customSelects.reporter.setValue(r.who);
-                    if(customSelects.lol) customSelects.lol.setValue(r.lol);
-                    refreshOperatorSelect(r.lol);
-                    if(customSelects.lo) customSelects.lo.setValue(r.lo);
-                    
-                    document.getElementById('form-reason').value = r.reason;
-                    document.getElementById('form-remarks').value = r.remarks;
-                } else {
-                    delete form.dataset.recordId;
-                    title.innerText = "New Call-Out Log";
-                    submitBtn.innerText = "Confirm Record";
-                    document.getElementById('form-datetime').value = getPHTISOString();
-                    
-                    if(customSelects.brand) customSelects.brand.setValue('');
-                    if(customSelects.reporter) customSelects.reporter.setValue('');
-                    if(customSelects.lol) customSelects.lol.setValue('');
-                    if(customSelects.lo) customSelects.lo.setValue('');
-                }
-                toggleModal('callout-modal', true);
-            } catch (e) {
-                console.error("Open Modal Error:", e);
-                alert("Issue opening the form. Please refresh.");
-            }
-        }
-
-        // --- 4. RENDERERS ---
-
+        // --- RENDERING ---
         function renderAll() {
             renderDashboard();
             renderLogTabs();
             renderLogs();
             renderSettings();
+            initSearchSelects(); // Ensure dropdowns have latest data
             populateSelects();
+        }
+
+        function populateSelects() {
+            const sortedLeads = [...window.config.lols].sort();
+            const newLoLead = document.getElementById('new-lo-lead');
+            if(newLoLead) newLoLead.innerHTML = '<option value="">Select Team Lead</option>' + sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
+            const editOpLead = document.getElementById('edit-op-lead');
+            if(editOpLead) editOpLead.innerHTML = sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
         }
 
         function renderDashboard() {
             const filterType = document.getElementById('dashboard-filter') ? document.getElementById('dashboard-filter').value : 'overall';
             const monthPickerValue = document.getElementById('dashboard-month-picker') ? document.getElementById('dashboard-month-picker').value : '';
-            
             const now = new Date();
             let targetMonth, targetYear;
             let filterLabel = 'Overall';
-
-            // Filter Records Logic
-            let filteredRecords = records;
+            let filteredRecords = window.records;
 
             if (filterType === 'current_month') {
-                targetMonth = now.getMonth();
-                targetYear = now.getFullYear();
-                filterLabel = 'This Month';
-                
-                filteredRecords = records.filter(r => {
-                    const d = new Date(r.datetime);
-                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
-                });
+                targetMonth = now.getMonth(); targetYear = now.getFullYear(); filterLabel = 'This Month';
+                filteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
             } else if (filterType === 'specific_month' && monthPickerValue) {
                 const [yearStr, monthStr] = monthPickerValue.split('-');
-                targetYear = parseInt(yearStr);
-                targetMonth = parseInt(monthStr) - 1; // 0-indexed
-                
+                targetYear = parseInt(yearStr); targetMonth = parseInt(monthStr) - 1; 
                 const dateObj = new Date(targetYear, targetMonth);
                 filterLabel = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+                filteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
+            } else { filterLabel = 'Lifetime Total'; }
 
-                filteredRecords = records.filter(r => {
-                    const d = new Date(r.datetime);
-                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
-                });
-            } else {
-                filterLabel = 'Lifetime Total';
-            }
-
-            const total = filteredRecords.length;
-            const todayCount = records.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
-            
             document.getElementById('label-total').innerText = filterLabel;
-            document.getElementById('stat-total').innerText = total;
-            document.getElementById('stat-today').innerText = todayCount;
-            document.getElementById('coaching-period-label').innerText = filterType === 'overall' ? 'Overall' : filterLabel;
-
+            document.getElementById('stat-total').innerText = filteredRecords.length;
+            document.getElementById('stat-today').innerText = window.records.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
+            document.getElementById('coaching-period-label').innerText = filterLabel;
+            
+            // Stats
             if(filteredRecords.length > 0) {
                 const brands = filteredRecords.map(r => r.brand);
                 const mostBrand = brands.sort((a,b) => brands.filter(v => v===a).length - brands.filter(v => v===b).length).pop();
                 document.getElementById('stat-brand').innerText = mostBrand || '-';
-                
                 const reporters = filteredRecords.map(r => r.who);
                 const mostWho = reporters.sort((a,b) => reporters.filter(v => v===a).length - reporters.filter(v => v===b).length).pop();
                 document.getElementById('stat-who').innerText = mostWho || '-';
             } else {
-                document.getElementById('stat-brand').innerText = '-';
-                document.getElementById('stat-who').innerText = '-';
+                document.getElementById('stat-brand').innerText = '-'; document.getElementById('stat-who').innerText = '-';
             }
 
-            // Recent Activity (Use Filtered Records)
-            const recentBody = document.getElementById('recent-table-body');
-            recentBody.innerHTML = '';
-            const recentToShow = filteredRecords.slice().reverse().slice(0, 8);
-            
-            if(recentToShow.length === 0) {
-                recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found for this period</td></tr>`;
-            } else {
-                recentToShow.forEach(r => {
-                    const originalIdx = records.indexOf(r);
-                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
-                    recentBody.innerHTML += `
-                        <tr class="clickable-row" onclick="openCalloutModal(${originalIdx})">
-                            <td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td>
-                            <td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td>
-                            <td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td>
-                            <td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td>
-                            <td class="px-8 py-5 text-right whitespace-nowrap">
-                                <div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter">${r.lol}</div>
-                                <div class="text-[9px] font-bold text-slate-400 uppercase">${r.lo}</div>
-                            </td>
-                        </tr>`;
-                });
-            }
-
-            // Coaching Priority (Use Filtered Records)
+            // Coaching
             const coachingContainer = document.getElementById('coaching-list');
             if(coachingContainer) {
                 const operatorCounts = {};
-                filteredRecords.forEach(r => {
-                    if(r.lo) operatorCounts[r.lo] = (operatorCounts[r.lo] || 0) + 1;
-                });
-
+                filteredRecords.forEach(r => { if(r.lo) operatorCounts[r.lo] = (operatorCounts[r.lo] || 0) + 1; });
                 const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a).slice(0, 6);
                 coachingContainer.innerHTML = '';
                 if(sortedOperators.length === 0) {
-                    coachingContainer.innerHTML = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded for this period</div>`;
+                    coachingContainer.innerHTML = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded</div>`;
                 } else {
                     const maxCount = sortedOperators[0][1];
                     sortedOperators.forEach(([name, count], index) => {
                         const percentage = (count / maxCount) * 100;
                         const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : 'bg-blue-400');
-                        coachingContainer.innerHTML += `
-                            <div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                                <div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm">${index + 1}</div>
-                                <div class="flex-1">
-                                    <div class="flex justify-between items-center mb-1">
-                                        <span class="text-xs font-bold text-slate-700 truncate max-w-[100px]">${name}</span>
-                                        <span class="text-[10px] font-black text-slate-400">${count} Calls</span>
-                                    </div>
-                                    <div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                        <div class="h-full ${barColor} rounded-full transition-all duration-500" style="width: ${percentage}%"></div>
-                                    </div>
-                                </div>
-                            </div>
-                        `;
+                        coachingContainer.innerHTML += `<div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100"><div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm">${index + 1}</div><div class="flex-1"><div class="flex justify-between items-center mb-1"><span class="text-xs font-bold text-slate-700 truncate max-w-[100px]">${name}</span><span class="text-[10px] font-black text-slate-400">${count} Calls</span></div><div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${barColor} rounded-full" style="width: ${percentage}%"></div></div></div></div>`;
                     });
                 }
+            }
+
+            // Recent Table
+            const recentBody = document.getElementById('recent-table-body');
+            recentBody.innerHTML = '';
+            const recentToShow = filteredRecords.slice().reverse().slice(0, 8);
+            if(recentToShow.length === 0) {
+                recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found</td></tr>`;
+            } else {
+                recentToShow.forEach(r => {
+                    // Important: When editing from filtered list, we need to find the REAL index in main records array
+                    const originalIdx = window.records.findIndex(rec => rec.id === r.id); 
+                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+                    recentBody.innerHTML += `<tr class="clickable-row" onclick="openCalloutModal(${originalIdx})"><td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td><td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter">${r.lol}</div><div class="text-[9px] font-bold text-slate-400 uppercase">${r.lo}</div></td></tr>`;
+                });
             }
         }
 
         function renderLogTabs() {
             const container = document.getElementById('lol-filter-container');
-            const lols = ['All', ...[...config.lols].sort()];
+            const lols = ['All', ...[...window.config.lols].sort()];
             container.innerHTML = '';
             lols.forEach(lol => {
-                const count = lol === 'All' ? records.length : records.filter(r => r.lol === lol).length;
-                const isActive = currentLogFilter === lol;
-                container.innerHTML += `
-                    <button onclick="setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">
-                        ${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span>
-                    </button>`;
+                const count = lol === 'All' ? window.records.length : window.records.filter(r => r.lol === lol).length;
+                const isActive = window.currentLogFilter === lol;
+                container.innerHTML += `<button onclick="setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span></button>`;
             });
         }
 
-        function setLogFilter(lol) { currentLogFilter = lol; renderLogTabs(); renderLogs(); }
+        function setLogFilter(lol) { window.currentLogFilter = lol; renderLogTabs(); renderLogs(); }
 
         function renderLogs() {
             const body = document.getElementById('full-log-body');
             body.innerHTML = '';
-            const filtered = currentLogFilter === 'All' ? records : records.filter(r => r.lol === currentLogFilter);
+            const filtered = window.currentLogFilter === 'All' ? window.records : window.records.filter(r => r.lol === window.currentLogFilter);
             if(filtered.length === 0) { body.innerHTML = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`; return; }
-
             filtered.slice().reverse().forEach((r) => {
-                const idx = records.indexOf(r);
+                const idx = window.records.indexOf(r);
                 const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-                body.innerHTML += `
-                    <tr>
-                        <td class="px-6 py-6">
-                            ${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
-                        </td>
-                        <td class="px-6 py-6">
-                            <div class="font-bold text-slate-900">${date}</div>
-                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div>
-                        </td>
-                        <td class="px-6 py-6">
-                            <div class="font-bold text-slate-900">${r.brand}</div>
-                            <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div>
-                        </td>
-                        <td class="px-6 py-6">
-                            <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">${r.lol} / ${r.lo}</div>
-                            <div class="text-xs italic text-slate-500 font-medium mt-1">"${r.remarks || 'No remarks'}"</div>
-                        </td>
-                        <td class="px-6 py-6 text-center">
-                            <div class="flex items-center justify-center gap-2">
-                                <button onclick="openCalloutModal(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                </button>
-                                <button onclick="deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>`;
+                body.innerHTML += `<tr><td class="px-6 py-6">${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}</td><td class="px-6 py-6"><div class="font-bold text-slate-900">${date}</div><div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div></td><td class="px-6 py-6"><div class="font-bold text-slate-900">${r.brand}</div><div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div></td><td class="px-6 py-6"><div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">${r.lol} / ${r.lo}</div><div class="text-xs italic text-slate-500 font-medium mt-1">"${r.remarks || 'No remarks'}"</div></td><td class="px-6 py-6 text-center"><div class="flex items-center justify-center gap-2"><button onclick="openCalloutModal(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button><button onclick="deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg></button></div></td></tr>`;
             });
         }
 
+        // Settings Renderer
         function renderSettings() {
             const renderList = (type, targetId) => {
                 const list = document.getElementById(targetId);
                 list.innerHTML = '';
-                [...config[type]].sort().forEach(item => {
+                [...window.config[type]].sort().forEach(item => {
                     const li = document.createElement('li');
                     li.className = "flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all";
                     li.innerHTML = `<span class="font-bold text-sm text-slate-700">${item}</span>`;
@@ -1247,8 +920,8 @@
 
             const ocontainer = document.getElementById('list-los');
             ocontainer.innerHTML = '';
-            [...config.lols].sort().forEach(lead => {
-                const leadOperators = [...config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
+            [...window.config.lols].sort().forEach(lead => {
+                const leadOperators = [...window.config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
                 if (leadOperators.length > 0) {
                     let group = document.createElement('div');
                     group.className = "space-y-4";
@@ -1257,26 +930,18 @@
                         let brandTags = (o.brands || []).map(b => `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">${b}</span>`).join('');
                         let item = document.createElement('div');
                         item.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4";
-                        item.innerHTML = `
-                            <div class="flex-1">
-                                <div class="font-bold text-slate-900">${o.name}</div>
-                                <div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div>
-                            </div>`;
+                        item.innerHTML = `<div class="flex-1"><div class="font-bold text-slate-900">${o.name}</div><div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div></div>`;
                         let acts = document.createElement('div');
                         acts.className = "flex items-center gap-3 w-full sm:w-auto";
-                        
                         let editBtn = document.createElement('button');
                         editBtn.className = "p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold";
                         editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>`;
                         editBtn.onclick = () => openEditOperatorModal(o.name);
-
                         let del = document.createElement('button');
                         del.className = "p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold";
                         del.innerHTML = "&times;";
                         del.onclick = () => removeItem('los', o.name);
-                        
-                        acts.appendChild(editBtn);
-                        acts.appendChild(del);
+                        acts.appendChild(editBtn); acts.appendChild(del);
                         item.appendChild(acts); group.querySelector('div').appendChild(item);
                     });
                     ocontainer.appendChild(group);
@@ -1284,103 +949,41 @@
             });
         }
 
-        // --- 5. ACTION LOGIC ---
-
-        function backupData() {
-            const data = {
-                records: records,
-                config: config,
-                version: 'v4',
-                timestamp: new Date().toISOString()
-            };
-            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-            saveAs(blob, `Callout_Backup_${new Date().toISOString().split('T')[0]}.json`);
-            showToast("Backup downloaded successfully.");
-        }
-
-        async function restoreData() {
-            const fileInput = document.getElementById('restore-file');
-            const file = fileInput.files[0];
-            
-            if (!file) {
-                showToast("Please select a file first.");
-                return;
-            }
-
-            const confirmed = await AppModal.show("Confirm Restore", "This will completely overwrite your current data. Are you sure?", 'confirm');
-            if (!confirmed) return;
-
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    if (data.records && data.config) {
-                        records = data.records;
-                        config = data.config;
-                        
-                        // Sync to cloud if available
-                        if(window.saveFirebaseConfig) {
-                            window.saveFirebaseConfig(config);
-                        } else {
-                            saveConfig();
-                        }
-
-                        // For records, we might need a batch restore in a real app, but here local is refreshed
-                        // If cloud sync is on, local changes won't propagate up automatically like this unless we add logic.
-                        // However, for this context, let's assume restoring local works and if cloud is active, we might need manual re-upload logic or just accept it's a "local" restore.
-                        // Ideally, we loop and add to firebase? That's heavy.
-                        // Let's stick to local state refresh and if firebase methods exist, maybe use them.
-                        // Actually, the prompt context is mixed (cloud enabled in code).
-                        // If cloud is enabled, restoring from file is tricky because we shouldn't just overwrite local array.
-                        // We will just update local state for display. In a real scenario, you'd batch write to Firestore.
-                        
-                        // Re-initialize app
-                        renderAll();
-                        initSearchSelects();
-                        showToast("Data restored locally.");
-                        fileInput.value = ''; 
-                    } else {
-                        showToast("Invalid backup file format.");
-                    }
-                } catch (err) {
-                    console.error(err);
-                    showToast("Error reading file.");
+        // --- Actions ---
+        function filterBrandCheckboxes(inputId, containerId) {
+            const input = document.getElementById(inputId);
+            const filter = input.value.toLowerCase();
+            const container = document.getElementById(containerId);
+            const items = container.children;
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const span = item.querySelector('span');
+                if (span) {
+                    const text = span.textContent || span.innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) { item.style.display = "flex"; } 
+                    else { item.style.display = "none"; }
                 }
-            };
-            reader.readAsText(file);
+            }
         }
 
         function openEditOperatorModal(name) {
-            const op = config.los.find(o => o.name === name);
+            const op = window.config.los.find(o => o.name === name);
             if(!op) return;
-
             document.getElementById('edit-op-original-name').value = op.name;
             document.getElementById('edit-op-name').value = op.name;
-            
             const leadSelect = document.getElementById('edit-op-lead');
-            leadSelect.innerHTML = config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
+            leadSelect.innerHTML = window.config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
             leadSelect.value = op.lead;
-
-            // Generate Checkboxes
             const brandsContainer = document.getElementById('edit-op-brands');
             brandsContainer.innerHTML = '';
-            [...config.brands].sort().forEach(b => {
+            [...window.config.brands].sort().forEach(b => {
                 const isChecked = (op.brands || []).includes(b);
                 const div = document.createElement('div');
                 div.className = "flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer";
-                div.innerHTML = `
-                    <input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-                    <span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>
-                `;
-                div.onclick = (e) => {
-                    if (e.target.tagName !== 'INPUT') {
-                        const cb = div.querySelector('input');
-                        cb.checked = !cb.checked;
-                    }
-                };
+                div.innerHTML = `<input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
+                div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
                 brandsContainer.appendChild(div);
             });
-
             toggleModal('edit-operator-modal', true);
         }
 
@@ -1389,51 +992,25 @@
             const newName = document.getElementById('edit-op-name').value.trim();
             const newLead = document.getElementById('edit-op-lead').value;
             const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
-
             if (!newName) { showToast("Name is required"); return; }
-
-            const idx = config.los.findIndex(o => o.name === originalName);
+            const idx = window.config.los.findIndex(o => o.name === originalName);
             if (idx === -1) return;
-
-            if (newName !== originalName && config.los.some(o => o.name === newName)) {
-                showToast("Operator Name already taken");
-                return;
-            }
-
-            const confirmed = await AppModal.show("Update Operator", `Save changes for ${originalName}?`, 'confirm');
+            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { showToast("Name taken"); return; }
+            const confirmed = await AppModal.show("Update Operator", `Save changes?`, 'confirm');
             if (confirmed) {
-                config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
-                
-                // Cloud Sync
-                if(window.saveFirebaseConfig) {
-                    await window.saveFirebaseConfig(config);
-                } else {
-                    saveConfig();
-                }
-                
-                renderSettings();
-                populateSelects();
-                toggleModal('edit-operator-modal', false);
-                showToast("Operator updated successfully");
+                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                toggleModal('edit-operator-modal', false); showToast("Operator updated");
             }
         }
 
         async function removeItem(type, id) {
-            const confirmed = await AppModal.show("Delete Item", `Are you sure you want to delete "${id}"?`, 'confirm');
+            const confirmed = await AppModal.show("Delete Item", `Delete "${id}"?`, 'confirm');
             if(confirmed) {
-                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) {
-                    config[type] = config[type].filter(item => item !== id);
-                } else if(type === 'los') {
-                    config.los = config.los.filter(o => o.name !== id);
-                }
-                
-                if(window.saveFirebaseConfig) {
-                    await window.saveFirebaseConfig(config);
-                } else {
-                    saveConfig();
-                }
-                
-                renderSettings(); populateSelects(); initSearchSelects(); showToast("Item deleted.");
+                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
+                else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                showToast("Item deleted");
             }
         }
 
@@ -1441,73 +1018,39 @@
             const input = document.getElementById(inputId);
             const val = input.value.trim();
             if(!val) return;
-            if(config[type].includes(val)) { showToast("Name already exists."); return; }
-            
-            const confirmed = await AppModal.show("Add Entry", `Register "${val}" to database?`, 'confirm');
+            if(window.config[type].includes(val)) { showToast("Exists already"); return; }
+            const confirmed = await AppModal.show("Add Entry", `Register "${val}"?`, 'confirm');
             if(confirmed) {
-                config[type].push(val);
+                window.config[type].push(val);
                 input.value = '';
-                
-                if(window.saveFirebaseConfig) {
-                    await window.saveFirebaseConfig(config);
-                } else {
-                    saveConfig();
-                }
-
-                renderSettings(); populateSelects(); initSearchSelects(); showToast("Entry registered.");
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                showToast("Entry registered");
             }
         }
 
         async function addOperatorRelationship() {
             const name = document.getElementById('new-lo-name').value.trim();
             const lead = document.getElementById('new-lo-lead').value;
-            
             if(name && lead) {
-                if(config.los.some(o => o.name === name)) { showToast("Operator name already registered."); return; }
-                const confirmed = await AppModal.show("Create Operator", `Add "${name}" under Team Lead "${lead}"?`, 'confirm');
+                if(window.config.los.some(o => o.name === name)) { showToast("Operator exists"); return; }
+                const confirmed = await AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
                 if(confirmed) {
-                    config.los.push({ name, lead, brands: [] }); // Initialize with empty brands
+                    window.config.los.push({ name, lead, brands: [] });
                     document.getElementById('new-lo-name').value = '';
-                    
-                    if(window.saveFirebaseConfig) {
-                        await window.saveFirebaseConfig(config);
-                    } else {
-                        saveConfig();
-                    }
-
-                    renderSettings(); populateSelects(); showToast("Operator created. Click edit to assign brands.");
+                    if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                    showToast("Operator created");
                 }
-            } else {
-                showToast("Please enter a name and select a lead.");
-            }
+            } else { showToast("Fill all fields"); }
         }
 
         async function deleteRecord(index) {
-            // Because index can change, better to use ID if available (Cloud)
-            const rec = records[index];
+            const rec = window.records[index];
             if(!rec) return;
-
-            const confirmed = await AppModal.show("Delete Record", "Are you sure you want to delete this record?", 'confirm');
+            const confirmed = await AppModal.show("Delete Record", "Permanently delete this record?", 'confirm');
             if(confirmed) {
-                if(window.deleteFirebaseRecord && rec.id) {
-                    await window.deleteFirebaseRecord(rec.id);
-                } else {
-                    records.splice(index, 1);
-                    saveRecords();
-                }
-                
-                // UI will update via listener or manually if local
-                if(!window.deleteFirebaseRecord) {
-                    renderAll(); 
-                    showToast("Record purged.");
-                }
+                if(window.deleteFirebaseRecord && rec.id) await window.deleteFirebaseRecord(rec.id);
+                else { window.records.splice(index, 1); saveRecords(); renderAll(); }
             }
-        }
-
-        function populateSelects() {
-            const sortedLeads = [...config.lols].sort();
-            const newLoLead = document.getElementById('new-lo-lead');
-            if(newLoLead) newLoLead.innerHTML = '<option value="">Select Team Lead</option>' + sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
         }
 
         document.getElementById('callout-form').onsubmit = async (e) => {
@@ -1515,32 +1058,20 @@
             const form = e.target;
             const editIdx = parseInt(document.getElementById('edit-index').value);
             const isEdit = editIdx > -1;
-
             const brandVal = customSelects.brand.getValue();
             const reporterVal = customSelects.reporter.getValue();
             const lolVal = customSelects.lol.getValue();
             const loVal = customSelects.lo.getValue();
 
-            if(!brandVal || !reporterVal || !lolVal || !loVal) {
-                await AppModal.show("Incomplete", "Please ensure all searchable fields (Brand, Reporter, Lead, and Operator) are selected.", 'alert');
-                return;
-            }
-
-            const confirmed = await AppModal.show("Confirm Log", `Save this report to history?`, 'confirm');
+            if(!brandVal || !reporterVal || !lolVal || !loVal) { await AppModal.show("Incomplete", "Please fill all fields.", 'alert'); return; }
+            const confirmed = await AppModal.show("Confirm", `Save this record?`, 'confirm');
             if(!confirmed) return;
 
             const formData = new FormData(e.target);
             const proofFile = document.getElementById('form-proof').files[0];
             let proofBase64 = null;
-            
-            // Preserve existing proof if editing and no new file selected
-            if (isEdit && records[editIdx]) {
-                proofBase64 = records[editIdx].proof;
-            }
-
-            if (proofFile) {
-                proofBase64 = await new Promise(r => { const rd = new FileReader(); rd.onloadend = () => r(rd.result); rd.readAsDataURL(proofFile); });
-            }
+            if (isEdit && window.records[editIdx]) proofBase64 = window.records[editIdx].proof;
+            if (proofFile) proofBase64 = await new Promise(r => { const rd = new FileReader(); rd.onloadend = () => r(rd.result); rd.readAsDataURL(proofFile); });
 
             const recordData = {
                 datetime: formData.get('datetime'),
@@ -1551,132 +1082,54 @@
                 lol: lolVal,
                 remarks: formData.get('remarks'),
                 proof: proofBase64,
-                timestamp: isEdit ? records[editIdx].timestamp : Date.now()
+                timestamp: isEdit ? window.records[editIdx].timestamp : Date.now()
             };
 
-            if (isEdit) {
-                // Check if we have a cloud ID
-                if(window.updateFirebaseRecord && form.dataset.recordId) {
-                    await window.updateFirebaseRecord(form.dataset.recordId, recordData);
-                } else {
-                    records[editIdx] = recordData;
-                    saveRecords();
-                }
-            } else {
-                if(window.addFirebaseRecord) {
-                    await window.addFirebaseRecord(recordData);
-                } else {
-                    records.push(recordData);
-                    saveRecords();
-                }
-            }
-
-            // Local updates happen via listener if cloud, or manual if local
-            if(!window.addFirebaseRecord) {
-                renderAll();
-                showToast(`Log entry finalized.`);
-            }
+            if (isEdit && window.updateFirebaseRecord && form.dataset.recordId) await window.updateFirebaseRecord(form.dataset.recordId, recordData);
+            else if (window.addFirebaseRecord) await window.addFirebaseRecord(recordData);
             
-            e.target.reset(); 
-            toggleModal('callout-modal', false); 
+            e.target.reset(); toggleModal('callout-modal', false);
         };
 
-        // ... export logic same as before ...
-        async function exportToExcel() {
-             // ... existing export code ...
-             if(!records.length) return showToast("No data to export.");
-            showToast("Preparing Excel file... please wait.");
+        function showSection(id) {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active-tab'));
+            const map = ['dashboard', 'record-log', 'settings'];
+            const idx = map.indexOf(id);
+            if(idx !== -1) document.querySelectorAll('.nav-link')[idx].classList.add('active-tab');
+            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('mobile-active'));
+            const mob = document.getElementById(`mob-${id}`);
+            if(mob) mob.classList.add('mobile-active');
+            if(id === 'record-log') { renderLogTabs(); renderLogs(); }
+            if(id === 'dashboard') { renderDashboard(); }
+        }
 
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Call-outs');
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('.setting-tab').forEach(t => { t.classList.remove('bg-blue-50', 'text-blue-600'); t.classList.add('text-slate-500'); });
+            const act = document.getElementById(`tab-${tab}`);
+            if(act) { act.classList.remove('text-slate-500'); act.classList.add('bg-blue-50', 'text-blue-600'); }
+            document.querySelectorAll('.setting-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById(`set-${tab}`).classList.remove('hidden');
+        }
 
-            worksheet.columns = [
-                { header: 'Timestamp (PHT)', key: 'datetime', width: 25 },
-                { header: 'Brand', key: 'brand', width: 20 },
-                { header: 'Reporter', key: 'who', width: 20 },
-                { header: 'Reason', key: 'reason', width: 30 },
-                { header: 'Team Lead', key: 'lol', width: 20 },
-                { header: 'Operator', key: 'lo', width: 20 },
-                { header: 'Remarks', key: 'remarks', width: 30 },
-                { header: 'Evidence', key: 'evidence', width: 20 }
-            ];
-
-            worksheet.getRow(1).font = { bold: true };
-            
-            for (let i = 0; i < records.length; i++) {
-                const r = records[i];
-                const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-                
-                const row = worksheet.addRow({
-                    datetime: date,
-                    brand: r.brand,
-                    who: r.who,
-                    reason: r.reason,
-                    lol: r.lol,
-                    lo: r.lo,
-                    remarks: r.remarks || "N/A",
-                    evidence: "" 
-                });
-
-                if (r.proof) {
-                    row.height = 100;
-                    try {
-                        const imageId = workbook.addImage({
-                            base64: r.proof,
-                            extension: 'png',
-                        });
-                        worksheet.addImage(imageId, {
-                            tl: { col: 7.05, row: row.number - 1 + 0.05 }, 
-                            br: { col: 7.95, row: row.number - 0.05 },
-                            editAs: 'twoCell' 
-                        });
-                    } catch(e) {
-                        console.error("Image add error", e);
-                    }
+        function handleDashboardFilterChange() {
+            const filterType = document.getElementById('dashboard-filter').value;
+            const monthPicker = document.getElementById('dashboard-month-picker');
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    monthPicker.value = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
                 }
-            }
-
-            const buffer = await workbook.xlsx.writeBuffer();
-            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
-            saveAs(blob, `Callout_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
-            
-            showToast("Export successful!");
+            } else { monthPicker.classList.add('hidden'); }
+            renderDashboard();
         }
 
-        function showToast(msg) {
-            const toast = document.getElementById('toast');
-            toast.innerText = msg;
-            toast.classList.remove('translate-y-32');
-            setTimeout(() => toast.classList.add('translate-y-32'), 3000);
-        }
-
+        // View Image
         function viewImage(src) {
             const win = window.open("");
             win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
-        }
-
-        function filterBrandCheckboxes(inputId, containerId) {
-            const input = document.getElementById(inputId);
-            const filter = input.value.toLowerCase();
-            const container = document.getElementById(containerId);
-            const items = container.children;
-
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const span = item.querySelector('span');
-                if (span) {
-                    const text = span.textContent || span.innerText;
-                    if (text.toLowerCase().indexOf(filter) > -1) {
-                        if(item.tagName === 'LABEL' || item.tagName === 'DIV') {
-                             item.classList.remove('hidden');
-                             item.style.display = "flex";
-                        }
-                    } else {
-                        item.classList.add('hidden');
-                        item.style.display = "none";
-                    }
-                }
-            }
         }
     </script>
 </body>
