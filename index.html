@@ -8,9 +8,8 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- 1. INITIALIZE GLOBAL STATE (Before loading Firebase or App Logic) -->
+    <!-- 1. INITIALIZE GLOBAL STATE -->
     <script>
-        // Initialize global variables immediately so both Firebase and App Logic can access them
         window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
@@ -35,20 +34,18 @@
             measurementId: "G-TY71KC8LTQ"
         };
         
-        const appId = 'callout-tracker-main-db'; // FIXED ID for syncing across all devices
+        const appId = 'callout-tracker-main-db';
         
         const app = initializeApp(firebaseConfig);
         const auth = getAuth(app);
         const db = getFirestore(app);
 
-        // Auth Listener
         onAuthStateChanged(auth, (user) => {
             if (user) {
                 console.log("Connected to Cloud:", user.uid);
                 updateStatus('online');
                 setupRealtimeListeners();
             } else {
-                // Auto sign-in if not connected
                 signInAnonymously(auth).catch((error) => {
                     console.error("Auth Error:", error);
                     updateStatus('error');
@@ -69,15 +66,12 @@
         }
 
         function setupRealtimeListeners() {
-            // SYNC SETTINGS
             const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
             onSnapshot(settingsRef, (docSnap) => {
                 if (docSnap.exists()) {
                     window.config = docSnap.data();
-                    // Update LocalStorage as backup
                     localStorage.setItem('callout_config_v4', JSON.stringify(window.config));
                 } else {
-                    // Create default if missing
                     const defaultConfig = {
                          brands: ['Apple Inc', 'Google Store'],
                         lols: ['Lead John', 'Lead Sarah'],
@@ -90,63 +84,39 @@
                     setDoc(settingsRef, defaultConfig, { merge: true });
                     window.config = defaultConfig;
                 }
-                // Refresh UI
                 if(window.initSearchSelects) window.initSearchSelects(); 
                 if(window.renderSettings) window.renderSettings();
-            }, (error) => {
-                console.error("Settings Sync Error:", error);
-            });
+            }, (error) => console.error("Settings Sync Error:", error));
 
-            // SYNC RECORDS
             const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
             onSnapshot(recordsRef, (snapshot) => {
-                const loadedRecords = snapshot.docs.map(doc => ({
-                    id: doc.id,
-                    ...doc.data()
-                }));
-                // Sort descending
+                const loadedRecords = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 loadedRecords.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
-                
                 window.records = loadedRecords;
                 localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
-                
                 window.isInitialized = true;
                 if(window.renderAll) window.renderAll(); 
-            }, (error) => {
-                console.error("Records Sync Error:", error);
-            });
+            }, (error) => console.error("Records Sync Error:", error));
         }
 
-        // Global Firebase Functions
         window.saveFirebaseConfig = async function(newConfig) {
-            try {
-                const settingsRef = doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global');
-                await setDoc(settingsRef, newConfig);
-            } catch(e) { console.error(e); window.showToast("Sync Failed"); }
+            try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newConfig); } 
+            catch(e) { console.error(e); window.showToast("Sync Failed"); }
         };
 
         window.addFirebaseRecord = async function(recordData) {
-            try {
-                const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
-                await addDoc(recordsRef, recordData);
-                window.showToast("Synced to Cloud");
-            } catch(e) { console.error(e); window.showToast("Save Failed"); }
+            try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'records'), recordData); window.showToast("Synced to Cloud"); } 
+            catch(e) { console.error(e); window.showToast("Save Failed"); }
         };
 
         window.updateFirebaseRecord = async function(id, recordData) {
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', id);
-                await updateDoc(docRef, recordData);
-                window.showToast("Update Synced");
-            } catch(e) { console.error(e); window.showToast("Update Failed"); }
+            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id), recordData); window.showToast("Update Synced"); } 
+            catch(e) { console.error(e); window.showToast("Update Failed"); }
         };
 
         window.deleteFirebaseRecord = async function(id) {
-            try {
-                const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'records', id);
-                await deleteDoc(docRef);
-                window.showToast("Deleted from Cloud");
-            } catch(e) { console.error(e); window.showToast("Delete Failed"); }
+            try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id)); window.showToast("Deleted from Cloud"); } 
+            catch(e) { console.error(e); window.showToast("Delete Failed"); }
         };
     </script>
 
@@ -203,7 +173,7 @@
     <!-- Mobile Bottom Nav -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around py-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z"/></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
@@ -560,6 +530,74 @@
 
     <!-- 3. MAIN SCRIPT (Uses window variables directly) -->
     <script>
+        // --- 2. MODAL & SEARCH LOGIC ---
+        function toggleModal(id, show) {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const container = el.querySelector('.modal-container');
+            
+            if (show) {
+                el.classList.remove('hidden');
+                // Allow browser paint to process removal of hidden before applying opacity transition
+                requestAnimationFrame(() => {
+                    el.classList.remove('opacity-0');
+                    if(container) {
+                        container.classList.remove('scale-90', 'opacity-0');
+                    }
+                });
+            } else {
+                el.classList.add('opacity-0');
+                if(container) {
+                    container.classList.add('scale-90', 'opacity-0');
+                }
+                setTimeout(() => {
+                    el.classList.add('hidden');
+                }, 300);
+            }
+        }
+        
+        window.toggleModal = toggleModal; // EXPLICITLY ATTACH TO WINDOW
+
+        const AppModal = {
+            resolve: null,
+            show(title, message, type = 'confirm') {
+                return new Promise((res) => {
+                    this.resolve = res;
+                    const overlay = document.getElementById('app-modal');
+                    const container = overlay.querySelector('.modal-container');
+                    const actions = document.getElementById('app-modal-actions');
+                    const iconCont = document.getElementById('app-modal-icon');
+                    
+                    document.getElementById('app-modal-title').innerText = title;
+                    document.getElementById('app-modal-message').innerText = message;
+                    
+                    iconCont.innerHTML = type === 'confirm' ? 
+                        `<div class="p-4 bg-blue-50 text-blue-600 rounded-full"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>` : 
+                        `<div class="p-4 bg-green-50 text-green-600 rounded-full"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>`;
+
+                    actions.innerHTML = type === 'confirm' ? 
+                        `<button onclick="AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button><button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">Proceed</button>` : 
+                        `<button onclick="AppModal.handle(true)" class="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">Okay</button>`;
+
+                    overlay.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        overlay.classList.remove('opacity-0');
+                        container.classList.remove('scale-90', 'opacity-0');
+                    });
+                });
+            },
+            handle(value) {
+                const overlay = document.getElementById('app-modal');
+                const container = overlay.querySelector('.modal-container');
+                overlay.classList.add('opacity-0');
+                container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    this.resolve(value);
+                }, 300);
+            }
+        };
+
         const roleCategories = [
             { id: 'ams', label: 'Account Manager' },
             { id: 'als', label: 'Account Lead' },
@@ -753,7 +791,7 @@
                     if(customSelects.lol) customSelects.lol.setValue('');
                     if(customSelects.lo) customSelects.lo.setValue('');
                 }
-                toggleModal('callout-modal', true);
+                toggleModal('callout-modal', true); // Now explicitly defined and hoisted
             } catch (e) { console.error("Open Modal Error:", e); alert("Issue opening form. Please refresh."); }
         }
 
