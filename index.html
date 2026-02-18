@@ -8,14 +8,145 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- 1. INITIALIZE GLOBAL STATE -->
+    <!-- 1. GLOBAL UTILITIES & STATE (Loaded First) -->
     <script>
+        // Global State
         window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
         };
         window.isInitialized = false;
         window.currentLogFilter = 'All';
+
+        // Constants shared across scripts
+        const roleCategories = [
+            { id: 'ams', label: 'Account Manager' },
+            { id: 'als', label: 'Account Lead' },
+            { id: 'hosts', label: 'Live Host' },
+            { id: 'qas', label: 'Quality Assurance' }
+        ];
+
+        // --- UI UTILITIES ---
+        
+        window.showToast = function(msg) {
+            const toast = document.getElementById('toast');
+            if(toast) {
+                toast.innerText = msg;
+                toast.classList.remove('translate-y-32');
+                setTimeout(() => toast.classList.add('translate-y-32'), 3000);
+            } else {
+                console.log("Toast:", msg);
+            }
+        };
+
+        window.toggleModal = function(id, show) {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const container = el.querySelector('.modal-container');
+            
+            if (show) {
+                el.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    el.classList.remove('opacity-0');
+                    if(container) container.classList.remove('scale-90', 'opacity-0');
+                });
+            } else {
+                el.classList.add('opacity-0');
+                if(container) container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => el.classList.add('hidden'), 300);
+            }
+        };
+
+        window.viewImage = function(src) {
+            const win = window.open("");
+            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
+        };
+
+        window.AppModal = {
+            resolve: null,
+            show(title, message, type = 'confirm') {
+                return new Promise((res) => {
+                    this.resolve = res;
+                    const overlay = document.getElementById('app-modal');
+                    if (!overlay) {
+                        // Fallback if modal DOM isn't ready
+                        if(type === 'confirm') return res(confirm(message));
+                        else return res(alert(message));
+                    }
+
+                    const container = overlay.querySelector('.modal-container');
+                    const actions = document.getElementById('app-modal-actions');
+                    const iconCont = document.getElementById('app-modal-icon');
+                    
+                    document.getElementById('app-modal-title').innerText = title;
+                    document.getElementById('app-modal-message').innerText = message;
+                    
+                    let iconColor = type === 'alert' ? 'text-red-600' : (type === 'confirm' ? 'text-blue-600' : 'text-green-600');
+                    let iconBg = type === 'alert' ? 'bg-red-50' : (type === 'confirm' ? 'bg-blue-50' : 'bg-green-50');
+                    let btnColor = type === 'alert' ? 'bg-red-600' : (type === 'confirm' ? 'bg-blue-600' : 'bg-slate-900');
+
+                    iconCont.innerHTML = `
+                        <div class="p-4 ${iconBg} ${iconColor} rounded-full">
+                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                ${type === 'alert' 
+                                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />' 
+                                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />'}
+                            </svg>
+                        </div>`;
+
+                    if (type === 'confirm') {
+                        actions.innerHTML = `
+                            <button onclick="window.AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button>
+                            <button onclick="window.AppModal.handle(true)" class="flex-1 py-3 ${btnColor} text-white rounded-xl font-bold">Proceed</button>
+                        `;
+                    } else {
+                        actions.innerHTML = `
+                            <button onclick="window.AppModal.handle(true)" class="flex-1 py-3 ${btnColor} text-white rounded-xl font-bold">Okay</button>
+                        `;
+                    }
+
+                    overlay.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        overlay.classList.remove('opacity-0');
+                        container.classList.remove('scale-90', 'opacity-0');
+                    });
+                });
+            },
+            handle(value) {
+                const overlay = document.getElementById('app-modal');
+                const container = overlay.querySelector('.modal-container');
+                overlay.classList.add('opacity-0');
+                container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    this.resolve(value);
+                }, 300);
+            }
+        };
+
+        window.migrateReporterNames = function() {
+            if (!window.records || window.records.length === 0) return;
+            
+            let updates = 0;
+            window.records.forEach(r => {
+                if (r.who && !r.who.startsWith('[')) {
+                    for (const cat of roleCategories) {
+                        if (window.config[cat.id] && window.config[cat.id].includes(r.who)) {
+                            const newWho = `[${cat.label}] ${r.who}`;
+                            if (r.who !== newWho) {
+                                r.who = newWho;
+                                updates++;
+                                if (r.id && window.updateFirebaseRecord) {
+                                    window.updateFirebaseRecord(r.id, { who: newWho }, true);
+                                }
+                            }
+                            break; 
+                        }
+                    }
+                }
+            });
+            if (updates > 0 && window.renderAll) window.renderAll();
+        };
     </script>
 
     <!-- 2. FIREBASE MODULE -->
@@ -86,6 +217,7 @@
                 }
                 if(window.initSearchSelects) window.initSearchSelects(); 
                 if(window.renderSettings) window.renderSettings();
+                if(window.migrateReporterNames) window.migrateReporterNames();
             }, (error) => console.error("Settings Sync Error:", error));
 
             const recordsRef = collection(db, 'artifacts', appId, 'public', 'data', 'records');
@@ -95,6 +227,8 @@
                 window.records = loadedRecords;
                 localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
                 window.isInitialized = true;
+                
+                if(window.migrateReporterNames) window.migrateReporterNames();
                 if(window.renderAll) window.renderAll(); 
             }, (error) => console.error("Records Sync Error:", error));
         }
@@ -109,9 +243,12 @@
             catch(e) { console.error(e); window.showToast("Save Failed"); }
         };
 
-        window.updateFirebaseRecord = async function(id, recordData) {
-            try { await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id), recordData); window.showToast("Update Synced"); } 
-            catch(e) { console.error(e); window.showToast("Update Failed"); }
+        window.updateFirebaseRecord = async function(id, recordData, silent = false) {
+            try { 
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id), recordData); 
+                if(!silent) window.showToast("Update Synced"); 
+            } 
+            catch(e) { console.error(e); if(!silent) window.showToast("Update Failed"); }
         };
 
         window.deleteFirebaseRecord = async function(id) {
@@ -135,8 +272,11 @@
         .modal-overlay { transition: opacity 0.3s ease; }
         .modal-container { transition: transform 0.3s ease, opacity 0.3s ease; }
         .mobile-active { color: #2563eb !important; }
-        /* Safe area padding logic: 12px base + safe area inset */
         .safe-area-pb { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+        
+        /* Checkbox style for multiselect */
+        .checkbox-item { display: flex; align-items: center; gap: 8px; }
+        .checkbox-item input { width: 16px; height: 16px; accent-color: #2563eb; cursor: pointer; }
     </style>
 </head>
 <body class="bg-[#f8fafc] text-slate-800 min-h-screen pb-24 lg:pb-0">
@@ -174,17 +314,14 @@
     <!-- Mobile Bottom Nav -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around pt-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <!-- Grid Icon -->
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
-            <!-- Clipboard Icon -->
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             Log
         </button>
         <button id="mob-settings" onclick="showSection('settings')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
-            <!-- Gear/Cog Icon (Fixed) -->
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             Settings
         </button>
@@ -231,7 +368,7 @@
                 </div>
             </div>
 
-            <!-- Coaching Priority -->
+            <!-- Coaching Priority Widget (Moved Top) -->
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                 <div class="px-8 py-6 border-b border-slate-50 bg-red-50/30 flex justify-between items-center">
                     <div class="flex items-center gap-3">
@@ -245,10 +382,12 @@
                     </div>
                     <span id="coaching-period-label" class="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">Overall</span>
                 </div>
-                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <!-- Coaching items injected here -->
+                </div>
             </div>
 
-            <!-- Recent Activity -->
+            <!-- Recent Operational Activity (Moved Bottom) -->
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                 <div class="px-8 py-6 border-b border-slate-50">
                     <h2 class="font-extrabold text-slate-900">Recent Operational Activity</h2>
@@ -273,13 +412,28 @@
         <!-- SECTION: RECORD LOG -->
         <section id="record-log" class="hidden space-y-8">
             <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-6">
-                <h1 class="text-3xl font-extrabold text-slate-900">History Log</h1>
-                <button onclick="openCalloutModal()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-2xl font-bold shadow-xl shadow-blue-100 flex items-center justify-center gap-2">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
-                    New Log
-                </button>
+                <div>
+                    <h1 class="text-3xl font-extrabold text-slate-900">History Log</h1>
+                </div>
+                <div class="flex flex-wrap items-center gap-2">
+                    <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
+                        <label for="log-date-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</label>
+                        <select id="log-date-filter" onchange="handleLogDateFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer">
+                            <option value="overall">All Time</option>
+                            <option value="current_month">Current Month</option>
+                            <option value="specific_month">Select Month</option>
+                        </select>
+                    </div>
+                    <input type="month" id="log-month-picker" onchange="renderLogs(); renderLogTabs();" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                    <button onclick="openCalloutModal()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-100 flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
+                        New Log
+                    </button>
+                </div>
             </div>
+
             <div id="lol-filter-container" class="flex gap-3 overflow-x-auto no-scrollbar pb-2"></div>
+
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden">
                 <div class="overflow-x-auto">
                     <table class="w-full text-left text-sm">
@@ -618,11 +772,14 @@
 
         // --- Select & Filter Logic ---
         // (Function implementations same as before but using window.config directly)
-        function buildSearchSelect(containerId, options, initialValue = '', onSelect = null) {
+        function buildSearchSelect(containerId, options, initialValue = '', onSelect = null, isMulti = false) {
             const container = document.getElementById(containerId);
             if (!container) return null;
             let selectDiv = container.querySelector('.custom-search-select');
             let isNew = false;
+            // Internal state for multi
+            let selectedMulti = [];
+
             if (!selectDiv) {
                 const template = document.getElementById('search-select-template').cloneNode(true);
                 selectDiv = template.querySelector('.custom-search-select');
@@ -637,9 +794,26 @@
             const selectBtn = selectDiv.querySelector('.select-btn');
             const selectedText = selectDiv.querySelector('.selected-text');
             
-            selectDiv.dataset.value = initialValue;
-            if(initialValue) { selectedText.innerText = initialValue; selectedText.classList.remove('text-slate-400'); } 
-            else { selectedText.innerText = "Select..."; selectedText.classList.add('text-slate-400'); }
+            // Handle Initial Value
+            if (isMulti) {
+                selectedMulti = Array.isArray(initialValue) ? initialValue : (initialValue ? [initialValue] : []);
+                updateMultiDisplay();
+            } else {
+                selectDiv.dataset.value = initialValue;
+                if(initialValue) { selectedText.innerText = initialValue; selectedText.classList.remove('text-slate-400'); } 
+                else { selectedText.innerText = "Select..."; selectedText.classList.add('text-slate-400'); }
+            }
+
+            function updateMultiDisplay() {
+                if (selectedMulti.length === 0) {
+                    selectedText.innerText = "Select Operators...";
+                    selectedText.classList.add('text-slate-400');
+                } else {
+                    selectedText.innerText = selectedMulti.join(', ');
+                    selectedText.classList.remove('text-slate-400');
+                }
+                selectDiv.dataset.value = JSON.stringify(selectedMulti);
+            }
 
             const renderList = (filter = '') => {
                 listContainer.innerHTML = '';
@@ -648,17 +822,39 @@
                 filtered.forEach(o => {
                     const item = document.createElement('div');
                     item.className = 'dropdown-item';
-                    item.innerHTML = o.isCategory ? `<div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">${o.label}</div>` : o.label;
-                    if(!o.isCategory) {
+                    
+                    if (isMulti) {
+                        const isSelected = selectedMulti.includes(o.label);
+                        item.innerHTML = `
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" ${isSelected ? 'checked' : ''} class="pointer-events-none form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300">
+                                <span class="text-sm text-slate-700">${o.label}</span>
+                            </div>
+                        `;
                         item.onclick = (e) => {
                             e.stopPropagation();
-                            selectDiv.dataset.value = o.label;
-                            selectedText.innerText = o.label;
-                            selectedText.classList.remove('text-slate-400');
-                            selectDiv.querySelector('.dropdown-content').classList.remove('show');
-                            if(onSelect) onSelect(o.label);
+                            if (selectedMulti.includes(o.label)) {
+                                selectedMulti = selectedMulti.filter(v => v !== o.label);
+                            } else {
+                                selectedMulti.push(o.label);
+                            }
+                            updateMultiDisplay();
+                            renderList(searchInput.value);
+                            if(onSelect) onSelect(selectedMulti);
                         };
-                    } else { item.classList.add('bg-slate-50', 'pointer-events-none', 'mt-2', 'first:mt-0'); }
+                    } else {
+                        item.innerHTML = o.isCategory ? `<div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">${o.label}</div>` : o.label;
+                        if(!o.isCategory) {
+                            item.onclick = (e) => {
+                                e.stopPropagation();
+                                selectDiv.dataset.value = o.label;
+                                selectedText.innerText = o.label;
+                                selectedText.classList.remove('text-slate-400');
+                                selectDiv.querySelector('.dropdown-content').classList.remove('show');
+                                if(onSelect) onSelect(o.label);
+                            };
+                        } else { item.classList.add('bg-slate-50', 'pointer-events-none', 'mt-2', 'first:mt-0'); }
+                    }
                     listContainer.appendChild(item);
                 });
             };
@@ -674,11 +870,16 @@
                 searchInput.oninput = (e) => renderList(e.target.value);
             }
             return {
-                getValue: () => selectDiv.dataset.value,
+                getValue: () => isMulti ? JSON.parse(selectDiv.dataset.value || '[]') : selectDiv.dataset.value,
                 setValue: (val) => {
-                    selectDiv.dataset.value = val;
-                    selectedText.innerText = val || 'Select...';
-                    if(!val) selectedText.classList.add('text-slate-400'); else selectedText.classList.remove('text-slate-400');
+                    if (isMulti) {
+                        selectedMulti = Array.isArray(val) ? val : (val ? [val] : []);
+                        updateMultiDisplay();
+                    } else {
+                        selectDiv.dataset.value = val;
+                        selectedText.innerText = val || 'Select...';
+                        if(!val) selectedText.classList.add('text-slate-400'); else selectedText.classList.remove('text-slate-400');
+                    }
                 },
                 refresh: (newOptions) => { options = newOptions; renderList(''); }
             };
@@ -715,7 +916,7 @@
                 const names = [...(window.config[cat.id] || [])].sort();
                 if(names.length > 0) {
                     reporterOpts.push({ label: cat.label, isCategory: true });
-                    names.forEach(n => reporterOpts.push({ label: n }));
+                    names.forEach(n => reporterOpts.push({ label: `[${cat.label}] ${n}` }));
                 }
             });
             if (customSelects.reporter) customSelects.reporter.refresh(reporterOpts);
@@ -723,42 +924,87 @@
 
             const leadOpts = (window.config.lols || []).sort().map(l => ({ label: l }));
             if (customSelects.lol) customSelects.lol.refresh(leadOpts);
-            else customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => refreshOperatorSelect(val));
+            else customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => refreshOperatorSelect(val), true); // MULTI SELECT for Team Lead
 
             if (customSelects.lo) customSelects.lo.refresh([]);
-            else customSelects.lo = buildSearchSelect('lo-select-container', []);
+            else customSelects.lo = buildSearchSelect('lo-select-container', [], [], null, true); // MULTI SELECT for Operator
         }
 
-        function refreshOperatorSelect(leadName) {
-            const filtered = window.config.los.filter(o => o.lead === leadName).sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
-            if(customSelects.lo) { customSelects.lo.refresh(filtered); customSelects.lo.setValue(''); }
+        function refreshOperatorSelect(leadNames) {
+            // leadNames can be array or string
+            const leads = Array.isArray(leadNames) ? leadNames : (leadNames ? [leadNames] : []);
+            
+            const filtered = window.config.los
+                .filter(o => leads.includes(o.lead))
+                .sort((a,b) => a.name.localeCompare(b.name))
+                .map(o => ({ label: o.name }));
+                
+            if(customSelects.lo) { 
+                customSelects.lo.refresh(filtered); 
+                customSelects.lo.setValue([]); 
+            }
         }
 
         function autoSelectOperatorByBrand(brandName) {
             const assignedOps = window.config.los.filter(o => o.brands && o.brands.includes(brandName));
             if (assignedOps.length > 0) {
                 const uniqueLeads = [...new Set(assignedOps.map(o => o.lead))];
-                if (uniqueLeads.length === 1) {
-                    const leadName = uniqueLeads[0];
-                    if (customSelects.lol) customSelects.lol.setValue(leadName);
-                    const brandSpecificOps = assignedOps.sort((a,b) => a.name.localeCompare(b.name)).map(o => ({ label: o.name }));
-                    if (customSelects.lo) {
-                        customSelects.lo.refresh(brandSpecificOps);
-                        if (brandSpecificOps.length === 1) {
-                            customSelects.lo.setValue(brandSpecificOps[0].label);
-                            showToast("Auto-selected assigned operator.");
-                        } else {
-                            customSelects.lo.setValue('');
-                            showToast("Please select the specific operator.");
-                        }
+                
+                // Always set Leads (works for single or multiple)
+                if (customSelects.lol) customSelects.lol.setValue(uniqueLeads);
+                
+                // Show all operators for these leads
+                refreshOperatorSelect(uniqueLeads);
+                
+                // Optionally refine operator selection if only specific ones match the brand
+                 const brandSpecificOpNames = assignedOps.map(o => o.name);
+                 
+                if (customSelects.lo) {
+                   // If only 1 specific op matches, select them. Otherwise leave blank filtered list.
+                    if (brandSpecificOpNames.length === 1) {
+                         customSelects.lo.setValue(brandSpecificOpNames);
+                         showToast("Auto-selected operator.");
+                    } else {
+                        customSelects.lo.setValue([]);
+                        showToast("Filtered by brand. Please select operators.");
                     }
-                } else {
-                    if (customSelects.lol) customSelects.lol.setValue('');
-                    if (customSelects.lo) { customSelects.lo.refresh([]); customSelects.lo.setValue(''); }
                 }
             } else {
-                if (customSelects.lol) customSelects.lol.setValue('');
-                if (customSelects.lo) { customSelects.lo.refresh([]); customSelects.lo.setValue(''); }
+                if (customSelects.lol) customSelects.lol.setValue([]);
+                if (customSelects.lo) { customSelects.lo.refresh([]); customSelects.lo.setValue([]); }
+            }
+        }
+
+        function migrateReporterNames() {
+            if (!window.records || window.records.length === 0) return;
+            
+            let updates = 0;
+            // Iterate and update records in memory first
+            window.records.forEach(r => {
+                if (r.who && !r.who.startsWith('[')) {
+                    // Try to find the role
+                    for (const cat of roleCategories) {
+                        if (window.config[cat.id] && window.config[cat.id].includes(r.who)) {
+                            const newWho = `[${cat.label}] ${r.who}`;
+                            if (r.who !== newWho) {
+                                // Update local record
+                                r.who = newWho;
+                                updates++;
+                                // Update Firebase silently if ID exists
+                                if (r.id && window.updateFirebaseRecord) {
+                                    window.updateFirebaseRecord(r.id, { who: newWho }, true);
+                                }
+                            }
+                            break; 
+                        }
+                    }
+                }
+            });
+
+            if (updates > 0) {
+                console.log(`Migrated ${updates} reporter names.`);
+                // Refresh UI to show new names immediately
+                if(window.renderAll) window.renderAll();
             }
         }
 
@@ -780,9 +1026,17 @@
                     document.getElementById('form-datetime').value = r.datetime;
                     if(customSelects.brand) customSelects.brand.setValue(r.brand);
                     if(customSelects.reporter) customSelects.reporter.setValue(r.who);
-                    if(customSelects.lol) customSelects.lol.setValue(r.lol);
-                    refreshOperatorSelect(r.lol);
-                    if(customSelects.lo) customSelects.lo.setValue(r.lo);
+                    
+                    // Handle LOL as array (multi-select)
+                    let lolVal = Array.isArray(r.lol) ? r.lol : (r.lol ? [r.lol] : []);
+                    if(customSelects.lol) customSelects.lol.setValue(lolVal);
+                    
+                    refreshOperatorSelect(lolVal);
+                    
+                    // Handle LO as array
+                    let loVal = Array.isArray(r.lo) ? r.lo : (r.lo ? [r.lo] : []);
+                    if(customSelects.lo) customSelects.lo.setValue(loVal);
+                    
                     document.getElementById('form-reason').value = r.reason;
                     document.getElementById('form-remarks').value = r.remarks;
                 } else {
@@ -792,8 +1046,8 @@
                     document.getElementById('form-datetime').value = getPHTISOString();
                     if(customSelects.brand) customSelects.brand.setValue('');
                     if(customSelects.reporter) customSelects.reporter.setValue('');
-                    if(customSelects.lol) customSelects.lol.setValue('');
-                    if(customSelects.lo) customSelects.lo.setValue('');
+                    if(customSelects.lol) customSelects.lol.setValue([]);
+                    if(customSelects.lo) customSelects.lo.setValue([]);
                 }
                 toggleModal('callout-modal', true); // Now explicitly defined and hoisted
             } catch (e) { console.error("Open Modal Error:", e); alert("Issue opening form. Please refresh."); }
@@ -806,10 +1060,16 @@
             const isEdit = editIdx > -1;
             const brandVal = customSelects.brand.getValue();
             const reporterVal = customSelects.reporter.getValue();
-            const lolVal = customSelects.lol.getValue();
-            const loVal = customSelects.lo.getValue();
+            const lolVal = customSelects.lol.getValue(); // Array
+            const loVal = customSelects.lo.getValue(); // Array
 
-            if(!brandVal || !reporterVal || !lolVal || !loVal) { await AppModal.show("Incomplete", "Please fill all fields.", 'alert'); return; }
+            // Validation for arrays
+            const isLolValid = Array.isArray(lolVal) ? lolVal.length > 0 : !!lolVal;
+            const isLoValid = Array.isArray(loVal) ? loVal.length > 0 : !!loVal;
+
+            if(!brandVal || !reporterVal || !isLolValid || !isLoValid) { 
+                await AppModal.show("Incomplete", "Please fill all fields.", 'alert'); return; 
+            }
             const confirmed = await AppModal.show("Confirm", `Save this record?`, 'confirm');
             if(!confirmed) return;
 
@@ -824,7 +1084,7 @@
                 brand: brandVal,
                 who: reporterVal,
                 reason: formData.get('reason'),
-                lo: loVal,
+                lo: loVal, 
                 lol: lolVal,
                 remarks: formData.get('remarks'),
                 proof: proofBase64,
@@ -898,7 +1158,13 @@
             const coachingContainer = document.getElementById('coaching-list');
             if(coachingContainer) {
                 const operatorCounts = {};
-                filteredRecords.forEach(r => { if(r.lo) operatorCounts[r.lo] = (operatorCounts[r.lo] || 0) + 1; });
+                filteredRecords.forEach(r => { 
+                    // Handle array of operators in a single record
+                    const operators = Array.isArray(r.lo) ? r.lo : [r.lo];
+                    operators.forEach(opName => {
+                         if(opName) operatorCounts[opName] = (operatorCounts[opName] || 0) + 1;
+                    });
+                });
                 const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a).slice(0, 6);
                 coachingContainer.innerHTML = '';
                 if(sortedOperators.length === 0) {
@@ -923,7 +1189,11 @@
                 recentToShow.forEach(r => {
                     const originalIdx = window.records.findIndex(rec => rec.id === r.id); 
                     const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
-                    recentBody.innerHTML += `<tr class="clickable-row" onclick="openCalloutModal(${originalIdx})"><td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td><td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter">${r.lol}</div><div class="text-[9px] font-bold text-slate-400 uppercase">${r.lo}</div></td></tr>`;
+                    // Format LO/LOL array for display
+                    const displayLo = Array.isArray(r.lo) ? r.lo.join(', ') : r.lo;
+                    const displayLol = Array.isArray(r.lol) ? r.lol.join(', ') : r.lol;
+                    
+                    recentBody.innerHTML += `<tr class="clickable-row" onclick="openCalloutModal(${originalIdx})"><td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td><td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
                 });
             }
         }
@@ -932,8 +1202,36 @@
             const container = document.getElementById('lol-filter-container');
             const lols = ['All', ...[...window.config.lols].sort()];
             container.innerHTML = '';
+            
+            // Re-apply Date Filter Logic for accurate counts
+            const dateFilterType = document.getElementById('log-date-filter')?.value || 'overall';
+            const dateFilterValue = document.getElementById('log-month-picker')?.value;
+            
+            let recordsToCount = window.records;
+            if (dateFilterType === 'current_month') {
+                const now = new Date();
+                const targetMonth = now.getMonth();
+                const targetYear = now.getFullYear();
+                recordsToCount = recordsToCount.filter(r => {
+                    const d = new Date(r.datetime);
+                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                });
+            } else if (dateFilterType === 'specific_month' && dateFilterValue) {
+                const [yearStr, monthStr] = dateFilterValue.split('-');
+                const targetYear = parseInt(yearStr);
+                const targetMonth = parseInt(monthStr) - 1;
+                recordsToCount = recordsToCount.filter(r => {
+                    const d = new Date(r.datetime);
+                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                });
+            }
+
             lols.forEach(lol => {
-                const count = lol === 'All' ? window.records.length : window.records.filter(r => r.lol === lol).length;
+                const count = lol === 'All' ? recordsToCount.length : recordsToCount.filter(r => {
+                     // Check if r.lol (string or array) includes this lead
+                     if (Array.isArray(r.lol)) return r.lol.includes(lol);
+                     return r.lol === lol;
+                }).length;
                 const isActive = window.currentLogFilter === lol;
                 container.innerHTML += `<button onclick="setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span></button>`;
             });
@@ -944,13 +1242,116 @@
         function renderLogs() {
             const body = document.getElementById('full-log-body');
             body.innerHTML = '';
-            const filtered = window.currentLogFilter === 'All' ? window.records : window.records.filter(r => r.lol === window.currentLogFilter);
-            if(filtered.length === 0) { body.innerHTML = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`; return; }
-            filtered.slice().reverse().forEach((r) => {
+            
+            // 1. Date Filtering
+            const dateFilterType = document.getElementById('log-date-filter')?.value || 'overall';
+            const dateFilterValue = document.getElementById('log-month-picker')?.value;
+
+            let recordsToRender = window.records;
+
+            if (dateFilterType === 'current_month') {
+                const now = new Date();
+                const targetMonth = now.getMonth();
+                const targetYear = now.getFullYear();
+                recordsToRender = recordsToRender.filter(r => {
+                    const d = new Date(r.datetime);
+                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                });
+            } else if (dateFilterType === 'specific_month' && dateFilterValue) {
+                const [yearStr, monthStr] = dateFilterValue.split('-');
+                const targetYear = parseInt(yearStr);
+                const targetMonth = parseInt(monthStr) - 1;
+                recordsToRender = recordsToRender.filter(r => {
+                    const d = new Date(r.datetime);
+                    return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
+                });
+            }
+
+            // 2. LOL Filtering
+            const filtered = window.currentLogFilter === 'All' 
+                ? recordsToRender 
+                : recordsToRender.filter(r => {
+                     if (Array.isArray(r.lol)) return r.lol.includes(window.currentLogFilter);
+                     return r.lol === window.currentLogFilter;
+                });
+
+            if(filtered.length === 0) {
+                body.innerHTML = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`;
+                return;
+            }
+
+            // 3. Sorting (Latest First)
+            filtered.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
+
+            let currentGroup = '';
+
+            filtered.forEach((r) => {
                 const idx = window.records.indexOf(r);
-                const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
-                body.innerHTML += `<tr><td class="px-6 py-6">${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}</td><td class="px-6 py-6"><div class="font-bold text-slate-900">${date}</div><div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div></td><td class="px-6 py-6"><div class="font-bold text-slate-900">${r.brand}</div><div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div></td><td class="px-6 py-6"><div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest">${r.lol} / ${r.lo}</div><div class="text-xs italic text-slate-500 font-medium mt-1">"${r.remarks || 'No remarks'}"</div></td><td class="px-6 py-6 text-center"><div class="flex items-center justify-center gap-2"><button onclick="openCalloutModal(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg></button><button onclick="deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg></button></div></td></tr>`;
+                const dateObj = new Date(r.datetime);
+                const groupStr = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+                const date = dateObj.toLocaleString('en-US', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+                const displayLo = Array.isArray(r.lo) ? r.lo.join(', ') : r.lo;
+                const displayLol = Array.isArray(r.lol) ? r.lol.join(', ') : r.lol;
+
+                if (groupStr !== currentGroup) {
+                    currentGroup = groupStr;
+                    body.innerHTML += `
+                        <tr class="bg-slate-100/80 border-b border-slate-200">
+                            <td colspan="5" class="px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest sticky top-0 z-10">
+                                ${currentGroup}
+                            </td>
+                        </tr>
+                    `;
+                }
+
+                body.innerHTML += `
+                    <tr class="group hover:bg-white transition-colors border-b border-slate-50 last:border-0">
+                        <td class="px-6 py-6">
+                            ${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
+                        </td>
+                        <td class="px-6 py-6">
+                            <div class="font-bold text-slate-900">${date}</div>
+                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div>
+                        </td>
+                        <td class="px-6 py-6">
+                            <div class="font-bold text-slate-900">${r.brand}</div>
+                            <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div>
+                        </td>
+                        <td class="px-6 py-6">
+                            <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest truncate max-w-[120px]" title="${displayLol}">${displayLol}</div>
+                            <div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[120px]" title="${displayLo}">${displayLo}</div>
+                            <div class="text-xs italic text-slate-500 font-medium mt-1 truncate max-w-[150px]">"${r.remarks || 'No remarks'}"</div>
+                        </td>
+                        <td class="px-6 py-6 text-center">
+                            <div class="flex items-center justify-center gap-2">
+                                <button onclick="openCalloutModal(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                </button>
+                                <button onclick="deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>`;
             });
+        }
+
+        function handleLogDateFilterChange() {
+            const filterType = document.getElementById('log-date-filter').value;
+            const monthPicker = document.getElementById('log-month-picker');
+            
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    monthPicker.value = `${now.getFullYear()}-${month}`;
+                }
+            } else {
+                monthPicker.classList.add('hidden');
+            }
+            renderLogs();
+            renderLogTabs();
         }
 
         // Settings Renderer
@@ -1063,6 +1464,16 @@
             const val = input.value.trim();
             if(!val) return;
             if(window.config[type].includes(val)) { showToast("Exists already"); return; }
+            
+            // Check for duplicate in personnel roles
+             if(['ams', 'als', 'hosts', 'qas'].includes(type)) {
+                const foundRole = roleCategories.find(cat => window.config[cat.id].includes(val));
+                if (foundRole) {
+                    await AppModal.show("Duplicate Entry", `"${val}" is already registered under ${foundRole.label}.`, 'alert');
+                    return;
+                }
+            }
+
             const confirmed = await AppModal.show("Add Entry", `Register "${val}"?`, 'confirm');
             if(confirmed) {
                 window.config[type].push(val);
@@ -1075,12 +1486,15 @@
         async function addOperatorRelationship() {
             const name = document.getElementById('new-lo-name').value.trim();
             const lead = document.getElementById('new-lo-lead').value;
+             const selectedBrands = Array.from(document.querySelectorAll('#brand-checklist input:checked')).map(cb => cb.value);
+
             if(name && lead) {
                 if(window.config.los.some(o => o.name === name)) { showToast("Operator exists"); return; }
                 const confirmed = await AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
                 if(confirmed) {
-                    window.config.los.push({ name, lead, brands: [] });
+                    window.config.los.push({ name, lead, brands: selectedBrands });
                     document.getElementById('new-lo-name').value = '';
+                     document.querySelectorAll('#brand-checklist input').forEach(cb => cb.checked = false);
                     if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
                     showToast("Operator created");
                 }
