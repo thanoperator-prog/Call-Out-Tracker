@@ -8,145 +8,14 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- 1. GLOBAL UTILITIES & STATE (Loaded First) -->
+    <!-- 1. INITIALIZE GLOBAL STATE -->
     <script>
-        // Global State
         window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
         };
         window.isInitialized = false;
         window.currentLogFilter = 'All';
-
-        // Constants shared across scripts
-        const roleCategories = [
-            { id: 'ams', label: 'Account Manager' },
-            { id: 'als', label: 'Account Lead' },
-            { id: 'hosts', label: 'Live Host' },
-            { id: 'qas', label: 'Quality Assurance' }
-        ];
-
-        // --- UI UTILITIES ---
-        
-        window.showToast = function(msg) {
-            const toast = document.getElementById('toast');
-            if(toast) {
-                toast.innerText = msg;
-                toast.classList.remove('translate-y-32');
-                setTimeout(() => toast.classList.add('translate-y-32'), 3000);
-            } else {
-                console.log("Toast:", msg);
-            }
-        };
-
-        window.toggleModal = function(id, show) {
-            const el = document.getElementById(id);
-            if(!el) return;
-            const container = el.querySelector('.modal-container');
-            
-            if (show) {
-                el.classList.remove('hidden');
-                requestAnimationFrame(() => {
-                    el.classList.remove('opacity-0');
-                    if(container) container.classList.remove('scale-90', 'opacity-0');
-                });
-            } else {
-                el.classList.add('opacity-0');
-                if(container) container.classList.add('scale-90', 'opacity-0');
-                setTimeout(() => el.classList.add('hidden'), 300);
-            }
-        };
-
-        window.viewImage = function(src) {
-            const win = window.open("");
-            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
-        };
-
-        window.AppModal = {
-            resolve: null,
-            show(title, message, type = 'confirm') {
-                return new Promise((res) => {
-                    this.resolve = res;
-                    const overlay = document.getElementById('app-modal');
-                    if (!overlay) {
-                        // Fallback if modal DOM isn't ready
-                        if(type === 'confirm') return res(confirm(message));
-                        else return res(alert(message));
-                    }
-
-                    const container = overlay.querySelector('.modal-container');
-                    const actions = document.getElementById('app-modal-actions');
-                    const iconCont = document.getElementById('app-modal-icon');
-                    
-                    document.getElementById('app-modal-title').innerText = title;
-                    document.getElementById('app-modal-message').innerText = message;
-                    
-                    let iconColor = type === 'alert' ? 'text-red-600' : (type === 'confirm' ? 'text-blue-600' : 'text-green-600');
-                    let iconBg = type === 'alert' ? 'bg-red-50' : (type === 'confirm' ? 'bg-blue-50' : 'bg-green-50');
-                    let btnColor = type === 'alert' ? 'bg-red-600' : (type === 'confirm' ? 'bg-blue-600' : 'bg-slate-900');
-
-                    iconCont.innerHTML = `
-                        <div class="p-4 ${iconBg} ${iconColor} rounded-full">
-                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                ${type === 'alert' 
-                                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />' 
-                                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />'}
-                            </svg>
-                        </div>`;
-
-                    if (type === 'confirm') {
-                        actions.innerHTML = `
-                            <button onclick="window.AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button>
-                            <button onclick="window.AppModal.handle(true)" class="flex-1 py-3 ${btnColor} text-white rounded-xl font-bold">Proceed</button>
-                        `;
-                    } else {
-                        actions.innerHTML = `
-                            <button onclick="window.AppModal.handle(true)" class="flex-1 py-3 ${btnColor} text-white rounded-xl font-bold">Okay</button>
-                        `;
-                    }
-
-                    overlay.classList.remove('hidden');
-                    requestAnimationFrame(() => {
-                        overlay.classList.remove('opacity-0');
-                        container.classList.remove('scale-90', 'opacity-0');
-                    });
-                });
-            },
-            handle(value) {
-                const overlay = document.getElementById('app-modal');
-                const container = overlay.querySelector('.modal-container');
-                overlay.classList.add('opacity-0');
-                container.classList.add('scale-90', 'opacity-0');
-                setTimeout(() => {
-                    overlay.classList.add('hidden');
-                    this.resolve(value);
-                }, 300);
-            }
-        };
-
-        window.migrateReporterNames = function() {
-            if (!window.records || window.records.length === 0) return;
-            
-            let updates = 0;
-            window.records.forEach(r => {
-                if (r.who && !r.who.startsWith('[')) {
-                    for (const cat of roleCategories) {
-                        if (window.config[cat.id] && window.config[cat.id].includes(r.who)) {
-                            const newWho = `[${cat.label}] ${r.who}`;
-                            if (r.who !== newWho) {
-                                r.who = newWho;
-                                updates++;
-                                if (r.id && window.updateFirebaseRecord) {
-                                    window.updateFirebaseRecord(r.id, { who: newWho }, true);
-                                }
-                            }
-                            break; 
-                        }
-                    }
-                }
-            });
-            if (updates > 0 && window.renderAll) window.renderAll();
-        };
     </script>
 
     <!-- 2. FIREBASE MODULE -->
@@ -217,6 +86,7 @@
                 }
                 if(window.initSearchSelects) window.initSearchSelects(); 
                 if(window.renderSettings) window.renderSettings();
+                // Trigger migration check when config updates (in case new roles added match existing records)
                 if(window.migrateReporterNames) window.migrateReporterNames();
             }, (error) => console.error("Settings Sync Error:", error));
 
@@ -228,7 +98,9 @@
                 localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
                 window.isInitialized = true;
                 
+                // Trigger migration check whenever records update
                 if(window.migrateReporterNames) window.migrateReporterNames();
+                
                 if(window.renderAll) window.renderAll(); 
             }, (error) => console.error("Records Sync Error:", error));
         }
@@ -314,7 +186,7 @@
     <!-- Mobile Bottom Nav -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around pt-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
@@ -551,6 +423,7 @@
                     <!-- Backup & Restore Panel -->
                     <div id="set-backup" class="setting-panel hidden space-y-8">
                         <h3 class="text-xl font-bold">Data Management</h3>
+                        
                         <div class="bg-slate-50 p-6 rounded-[2rem] border border-slate-100 space-y-4">
                             <div>
                                 <h4 class="text-sm font-bold text-slate-900">Backup Data</h4>
@@ -561,6 +434,7 @@
                                 Download Backup
                             </button>
                         </div>
+
                         <div class="bg-red-50 p-6 rounded-[2rem] border border-red-100 space-y-4">
                             <div>
                                 <h4 class="text-sm font-bold text-red-900">Restore Data</h4>
@@ -947,6 +821,7 @@
 
         function autoSelectOperatorByBrand(brandName) {
             const assignedOps = window.config.los.filter(o => o.brands && o.brands.includes(brandName));
+            
             if (assignedOps.length > 0) {
                 const uniqueLeads = [...new Set(assignedOps.map(o => o.lead))];
                 
