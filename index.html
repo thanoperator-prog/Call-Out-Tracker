@@ -542,6 +542,9 @@
                                 <div id="view-remarks" class="p-5 bg-yellow-50/50 rounded-2xl border border-yellow-100 text-sm text-slate-600 leading-relaxed shadow-sm"></div>
                             </div>
                         </div>
+
+                        <!-- NEW: Dispute Section -->
+                        <div id="dispute-ui-section" class="pt-4 border-t border-slate-100"></div>
                     </div>
 
                     <!-- Right Column: Evidence -->
@@ -574,6 +577,20 @@
             </div>
             <form id="callout-form" class="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
                 <input type="hidden" id="edit-index" value="-1">
+                
+                <!-- NEW: Dispute Toggle (Admin Only) -->
+                <div class="admin-only bg-red-50 p-4 rounded-2xl border border-red-100 flex items-start gap-3">
+                    <div class="relative flex items-start">
+                        <div class="flex items-center h-5">
+                            <input id="form-disputed" name="isDisputed" type="checkbox" class="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer">
+                        </div>
+                    </div>
+                    <div class="ml-1 text-sm">
+                        <label for="form-disputed" class="font-bold text-red-700 cursor-pointer">Mark as Disputed / Valid Explanation</label>
+                        <p class="text-xs text-red-500 mt-1">If checked, this record will be <strong>excluded</strong> from all statistics and coaching counts.</p>
+                    </div>
+                </div>
+
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div class="space-y-2">
                         <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Timestamp (PHT)</label>
@@ -1104,7 +1121,14 @@
             const r = window.records[index];
             if(!r) return;
 
-            document.getElementById('view-id-display').innerText = r.id ? `REF: ${r.id.slice(-6).toUpperCase()}` : 'LOCAL RECORD';
+            // Handle Dispute Badge
+            const idDisplay = document.getElementById('view-id-display');
+            if(r.isDisputed) {
+                idDisplay.innerHTML = `<span class="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-black mr-2">DISPUTED / VOID</span> ${r.id ? `REF: ${r.id.slice(-6).toUpperCase()}` : 'LOCAL RECORD'}`;
+            } else {
+                idDisplay.innerText = r.id ? `REF: ${r.id.slice(-6).toUpperCase()}` : 'LOCAL RECORD';
+            }
+
             document.getElementById('view-date').innerText = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'full', timeStyle: 'medium' });
             document.getElementById('view-brand').innerText = r.brand || '-';
             document.getElementById('view-who').innerText = r.who || '-';
@@ -1112,6 +1136,75 @@
             document.getElementById('view-lo').innerText = Array.isArray(r.lo) ? r.lo.join(', ') : (r.lo || '-');
             document.getElementById('view-reason').innerText = r.reason || 'No details provided.';
             document.getElementById('view-remarks').innerText = r.remarks || 'No remarks provided.';
+
+            // --- Dispute Section Logic ---
+            const disputeUI = document.getElementById('dispute-ui-section');
+            const isAdmin = document.body.classList.contains('role-admin');
+            let disputeHtml = '';
+
+            // Status Logic: 'pending' | 'approved' | 'rejected' | or none
+            if (r.disputeStatus === 'pending') {
+                disputeHtml += `<div class="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-4 animate-in fade-in slide-in-from-bottom-2">
+                    <div class="flex items-start gap-3">
+                        <div class="p-2 bg-orange-100 text-orange-600 rounded-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
+                        </div>
+                        <div class="flex-1">
+                            <h4 class="font-bold text-orange-700 text-xs uppercase mb-1">Dispute Pending Review</h4>
+                            <p class="text-sm text-slate-600 italic bg-white p-3 rounded-lg border border-orange-100">"${r.disputeReason}"</p>
+                            ${isAdmin ? `
+                            <div class="flex gap-2 mt-3">
+                                <button onclick="window.resolveDispute(${index}, true)" class="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 shadow-sm transition-all flex items-center gap-1">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                                    Approve (Void Record)
+                                </button>
+                                <button onclick="window.resolveDispute(${index}, false)" class="px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 shadow-sm transition-all">Reject Dispute</button>
+                            </div>
+                            ` : `<p class="text-[10px] text-orange-400 mt-2 font-bold">Waiting for Operations Lead to review.</p>`}
+                        </div>
+                    </div>
+                </div>`;
+            } else if (r.disputeStatus === 'approved') {
+                disputeHtml += `<div class="bg-green-50 p-4 rounded-xl border border-green-100 mb-4 flex items-center gap-3">
+                    <div class="p-2 bg-green-100 text-green-600 rounded-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-green-700 text-xs uppercase">Dispute Approved</h4>
+                        <p class="text-[10px] text-green-600 font-bold">This record has been voided and excluded from stats.</p>
+                    </div>
+                </div>`;
+            } else if (r.disputeStatus === 'rejected') {
+                 disputeHtml += `<div class="bg-red-50 p-4 rounded-xl border border-red-100 mb-4 flex items-center gap-3">
+                    <div class="p-2 bg-red-100 text-red-600 rounded-lg">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                    </div>
+                    <div>
+                        <h4 class="font-bold text-red-700 text-xs uppercase">Dispute Rejected</h4>
+                        <p class="text-[10px] text-red-600 font-bold">The dispute was reviewed and denied. Record remains active.</p>
+                    </div>
+                </div>`;
+            }
+
+            // Show "File Dispute" button for Operators if no dispute exists or it was rejected (optional, usually just if none)
+            if (!isAdmin && !r.disputeStatus) {
+                 disputeHtml += `<div id="file-dispute-container">
+                    <button onclick="window.openDisputeForm()" id="btn-file-dispute" class="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-all">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
+                        File a Dispute for this record
+                    </button>
+                    <div id="dispute-input-container" class="hidden mt-3 space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
+                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Reason for Dispute</label>
+                        <textarea id="dispute-reason-text" class="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" rows="3" placeholder="Explain why this call-out is invalid..."></textarea>
+                        <div class="flex gap-2">
+                            <button onclick="window.submitDispute(${index})" class="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 shadow-md shadow-blue-100">Submit Dispute</button>
+                            <button onclick="document.getElementById('dispute-input-container').classList.add('hidden'); document.getElementById('btn-file-dispute').classList.remove('hidden');" class="px-4 py-2 bg-white border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50">Cancel</button>
+                        </div>
+                    </div>
+                 </div>`;
+            }
+
+            disputeUI.innerHTML = disputeHtml;
 
             const img = document.getElementById('view-image');
             const noImg = document.getElementById('view-no-image');
@@ -1135,15 +1228,80 @@
             toggleModal('view-record-modal', true);
         };
 
+        // NEW: Dispute Functions
+        window.openDisputeForm = function() {
+            document.getElementById('dispute-input-container').classList.remove('hidden');
+            document.getElementById('btn-file-dispute').classList.add('hidden');
+        };
+
+        window.submitDispute = async function(index) {
+            const reason = document.getElementById('dispute-reason-text').value.trim();
+            if (!reason) {
+                if(window.showToast) window.showToast("Please enter a reason.");
+                return;
+            }
+            
+            const confirmed = await AppModal.show("Submit Dispute", "Are you sure you want to dispute this record?", "confirm");
+            if (!confirmed) return;
+
+            // Update record status to pending
+            const r = window.records[index];
+            const updates = {
+                disputeStatus: 'pending',
+                disputeReason: reason,
+                disputeDate: Date.now()
+            };
+
+            // Optimistic Update
+            Object.assign(r, updates);
+            
+            // Save to Firebase
+            if (window.updateFirebaseRecord && r.id) {
+                await window.updateFirebaseRecord(r.id, updates);
+            }
+            
+            if(window.showToast) window.showToast("Dispute submitted for review.");
+            window.viewRecord(index); // Refresh view
+        };
+
+        window.resolveDispute = async function(index, isApproved) {
+            const action = isApproved ? "Approve" : "Reject";
+            const confirmed = await AppModal.show(`${action} Dispute`, `Are you sure you want to ${action.toLowerCase()} this dispute?`, "confirm");
+            if (!confirmed) return;
+
+            const r = window.records[index];
+            const updates = {
+                disputeStatus: isApproved ? 'approved' : 'rejected',
+                isDisputed: isApproved // IMPORTANT: This triggers the void logic in stats
+            };
+
+            // Optimistic Update
+            Object.assign(r, updates);
+
+            // Save to Firebase
+            if (window.updateFirebaseRecord && r.id) {
+                await window.updateFirebaseRecord(r.id, updates);
+            }
+
+            if(window.showToast) window.showToast(`Dispute ${isApproved ? 'Approved' : 'Rejected'}`);
+            window.viewRecord(index); // Refresh view
+            // Also refresh background lists if needed
+            if(window.renderAll) window.renderAll();
+        };
+
         function openCalloutModal(editIdx = -1, forceEdit = false) {
             try {
                 if (!window.isInitialized || !customSelects.brand) { initSearchSelects(); window.isInitialized = true; }
                 const form = document.getElementById('callout-form');
+                if (!form) { console.error("Form not found!"); return; } // Safety
+
                 const submitBtn = document.getElementById('modal-submit-btn');
                 const cancelBtn = document.getElementById('modal-cancel-btn');
                 const title = document.getElementById('modal-title');
                 
-                document.getElementById('edit-index').value = editIdx;
+                const editIndexEl = document.getElementById('edit-index');
+                if(editIndexEl) editIndexEl.value = editIdx;
+                
                 form.reset();
                 
                 // Helper to set editable state (Always editable in this function now)
@@ -1165,7 +1323,13 @@
                     form.dataset.recordId = r.id; 
                     title.innerText = "Revise Entry"; // Always "Revise" if editIdx exists here
                     
-                    document.getElementById('form-datetime').value = r.datetime;
+                    const dtEl = document.getElementById('form-datetime');
+                    if(dtEl && r.datetime) dtEl.value = r.datetime;
+                    
+                    // Set Dispute Checkbox safely
+                    const disputeEl = document.getElementById('form-disputed');
+                    if(disputeEl) disputeEl.checked = !!r.isDisputed;
+
                     if(customSelects.brand) customSelects.brand.setValue(r.brand);
                     if(customSelects.reporter) customSelects.reporter.setValue(r.who);
                     
@@ -1176,14 +1340,23 @@
                     let loVal = Array.isArray(r.lo) ? r.lo : (r.lo ? [r.lo] : []);
                     if(customSelects.lo) customSelects.lo.setValue(loVal);
                     
-                    document.getElementById('form-reason').value = r.reason;
-                    document.getElementById('form-remarks').value = r.remarks;
+                    const reasonEl = document.getElementById('form-reason');
+                    if(reasonEl) reasonEl.value = r.reason || '';
+                    
+                    const remarksEl = document.getElementById('form-remarks');
+                    if(remarksEl) remarksEl.value = r.remarks || '';
                     
                     setEditable();
                 } else {
                     delete form.dataset.recordId;
                     title.innerText = "New Call-Out Log";
-                    document.getElementById('form-datetime').value = getPHTISOString();
+                    
+                    const dtEl = document.getElementById('form-datetime');
+                    if(dtEl) dtEl.value = getPHTISOString();
+                    
+                    const disputeEl = document.getElementById('form-disputed');
+                    if(disputeEl) disputeEl.checked = false; // Reset checkbox for new
+                    
                     if(customSelects.brand) customSelects.brand.setValue('');
                     if(customSelects.reporter) customSelects.reporter.setValue('');
                     if(customSelects.lol) customSelects.lol.setValue([]);
@@ -1204,6 +1377,9 @@
             const reporterVal = customSelects.reporter.getValue();
             const lolVal = customSelects.lol.getValue(); // Array
             const loVal = customSelects.lo.getValue(); // Array
+            
+            const disputeEl = document.getElementById('form-disputed');
+            const isDisputed = disputeEl ? disputeEl.checked : false;
 
             // Validation for arrays
             const isLolValid = Array.isArray(lolVal) ? lolVal.length > 0 : !!lolVal;
@@ -1230,8 +1406,13 @@
                 lol: lolVal,
                 remarks: formData.get('remarks'),
                 proof: proofBase64,
+                isDisputed: isDisputed, // Save Dispute State
                 timestamp: isEdit ? window.records[editIdx].timestamp : Date.now()
             };
+
+            // If admin manually toggles dispute in edit form, ensure we reset or set disputeStatus accordingly if needed, 
+            // but usually manual override is stronger. We'll leave disputeStatus as is unless we want manual uncheck to clear it.
+            // For now, let's keep it simple.
 
             try {
                 if (isEdit && window.updateFirebaseRecord && form.dataset.recordId) await window.updateFirebaseRecord(form.dataset.recordId, recordData);
@@ -1269,41 +1450,49 @@
             const now = new Date();
             let targetMonth, targetYear;
             let filterLabel = 'Overall';
-            let filteredRecords = window.records;
+            
+            // Base Filter by Date
+            let allDateFilteredRecords = window.records;
 
             if (filterType === 'current_month') {
                 targetMonth = now.getMonth(); targetYear = now.getFullYear(); filterLabel = 'This Month';
-                filteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
+                allDateFilteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
             } else if (filterType === 'specific_month' && monthPickerValue) {
                 const [yearStr, monthStr] = monthPickerValue.split('-');
                 targetYear = parseInt(yearStr); targetMonth = parseInt(monthStr) - 1; 
                 const dateObj = new Date(targetYear, targetMonth);
                 filterLabel = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-                filteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
+                allDateFilteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
             } else { filterLabel = 'Lifetime Total'; }
 
+            // FILTER OUT DISPUTED RECORDS FOR STATS
+            const validRecords = allDateFilteredRecords.filter(r => !r.isDisputed);
+
             document.getElementById('label-total').innerText = filterLabel;
-            document.getElementById('stat-total').innerText = filteredRecords.length;
-            document.getElementById('stat-today').innerText = window.records.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
+            document.getElementById('stat-total').innerText = validRecords.length;
+            
+            // Today's Active (Valid Only)
+            document.getElementById('stat-today').innerText = validRecords.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
+            
             document.getElementById('coaching-period-label').innerText = filterType === 'overall' ? 'Overall' : filterLabel;
             
-            // Stats
-            if(filteredRecords.length > 0) {
-                const brands = filteredRecords.map(r => r.brand);
+            // Stats (Valid Only)
+            if(validRecords.length > 0) {
+                const brands = validRecords.map(r => r.brand);
                 const mostBrand = brands.sort((a,b) => brands.filter(v => v===a).length - brands.filter(v => v===b).length).pop();
                 document.getElementById('stat-brand').innerText = mostBrand || '-';
-                const reporters = filteredRecords.map(r => r.who);
+                const reporters = validRecords.map(r => r.who);
                 const mostWho = reporters.sort((a,b) => reporters.filter(v => v===a).length - reporters.filter(v => v===b).length).pop();
                 document.getElementById('stat-who').innerText = mostWho || '-';
             } else {
                 document.getElementById('stat-brand').innerText = '-'; document.getElementById('stat-who').innerText = '-';
             }
 
-            // Coaching
+            // Coaching (Valid Only)
             const coachingContainer = document.getElementById('coaching-list');
             if(coachingContainer) {
                 const operatorCounts = {};
-                filteredRecords.forEach(r => { 
+                validRecords.forEach(r => { 
                     // Handle array of operators in a single record
                     const operators = Array.isArray(r.lo) ? r.lo : [r.lo];
                     operators.forEach(opName => {
@@ -1324,10 +1513,13 @@
                 }
             }
 
-            // Recent Table
+            // Recent Table (Shows ALL records, even disputed, but visually marked)
             const recentBody = document.getElementById('recent-table-body');
             recentBody.innerHTML = '';
-            const recentToShow = filteredRecords.slice().reverse().slice(0, 8);
+            // Use allDateFilteredRecords (includes disputed) or window.records for truly recent irrespective of filter
+            // Usually "Recent" means recent global activity, so let's use window.records
+            const recentToShow = window.records.slice().sort((a, b) => new Date(b.datetime) - new Date(a.datetime)).slice(0, 8);
+            
             if(recentToShow.length === 0) {
                 recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found</td></tr>`;
             } else {
@@ -1338,7 +1530,11 @@
                     const displayLo = Array.isArray(r.lo) ? r.lo.join(', ') : r.lo;
                     const displayLol = Array.isArray(r.lol) ? r.lol.join(', ') : r.lol;
                     
-                    recentBody.innerHTML += `<tr class="clickable-row" onclick="viewRecord(${originalIdx})"><td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td><td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
+                    const rowClass = r.isDisputed ? 'bg-red-50/50' : '';
+                    const strikeClass = r.isDisputed ? 'line-through text-red-300' : 'text-slate-900';
+                    const textClass = r.isDisputed ? 'text-red-300' : 'text-slate-600';
+                    
+                    recentBody.innerHTML += `<tr class="clickable-row ${rowClass}" onclick="viewRecord(${originalIdx})"><td class="px-8 py-5 font-bold ${strikeClass} whitespace-nowrap">${date} ${r.isDisputed ? '<span class="ml-2 bg-red-100 text-red-500 text-[8px] px-1.5 py-0.5 rounded no-underline inline-block">VOID</span>' : ''}</td><td class="px-8 py-5 font-medium ${textClass}">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px] ${r.isDisputed ? 'opacity-50' : ''}">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
                 });
             }
         }
@@ -1370,6 +1566,9 @@
                     return d.getMonth() === targetMonth && d.getFullYear() === targetYear;
                 });
             }
+
+            // Exclude disputed from Tab Counts as well? Usually better to just count them as 'records' but filtering in dashboard.
+            // Let's keep them in the count but maybe show valid count. For simplicity, just count existing records in the list.
 
             lols.forEach(lol => {
                 const count = lol === 'All' ? recordsToCount.length : recordsToCount.filter(r => {
@@ -1449,20 +1648,26 @@
                     `;
                 }
 
+                // Disputed Styling
+                const rowStyle = r.isDisputed ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-white';
+                const opacityStyle = r.isDisputed ? 'opacity-60 grayscale' : '';
+                const disputeBadge = r.isDisputed ? '<div class="mb-1"><span class="bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded">VOIDED</span></div>' : '';
+
                 body.innerHTML += `
-                    <tr class="group hover:bg-white transition-colors border-b border-slate-50 last:border-0">
-                        <td class="px-6 py-6">
+                    <tr class="group transition-colors border-b border-slate-50 last:border-0 ${rowStyle}">
+                        <td class="px-6 py-6 ${opacityStyle}">
                             ${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
                         </td>
                         <td class="px-6 py-6">
-                            <div class="font-bold text-slate-900">${date}</div>
-                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div>
+                            ${disputeBadge}
+                            <div class="font-bold text-slate-900 ${r.isDisputed ? 'line-through text-red-900' : ''}">${date}</div>
+                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest ${r.isDisputed ? 'text-red-400' : ''}">${r.who}</div>
                         </td>
-                        <td class="px-6 py-6">
+                        <td class="px-6 py-6 ${opacityStyle}">
                             <div class="font-bold text-slate-900">${r.brand}</div>
                             <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div>
                         </td>
-                        <td class="px-6 py-6">
+                        <td class="px-6 py-6 ${opacityStyle}">
                             <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest truncate max-w-[120px]" title="${displayLol}">${displayLol}</div>
                             <div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[120px]" title="${displayLo}">${displayLo}</div>
                             <div class="text-xs italic text-slate-500 font-medium mt-1 truncate max-w-[150px]">"${r.remarks || 'No remarks'}"</div>
@@ -1479,24 +1684,6 @@
                         </td>
                     </tr>`;
             });
-        }
-
-        function handleLogDateFilterChange() {
-            const filterType = document.getElementById('log-date-filter').value;
-            const monthPicker = document.getElementById('log-month-picker');
-            
-            if (filterType === 'specific_month') {
-                monthPicker.classList.remove('hidden');
-                if (!monthPicker.value) {
-                    const now = new Date();
-                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-                    monthPicker.value = `${now.getFullYear()}-${month}`;
-                }
-            } else {
-                monthPicker.classList.add('hidden');
-            }
-            renderLogs();
-            renderLogTabs();
         }
 
         // Settings Renderer
