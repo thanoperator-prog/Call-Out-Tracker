@@ -729,6 +729,25 @@
         // --- LOGIN LOGIC ---
         let selectedRole = 'operator';
 
+        // AUTO-LOGIN CHECK (Run immediately)
+        (function checkLoginState() {
+            const savedRole = localStorage.getItem('callout_user_role');
+            if (savedRole) {
+                document.body.classList.add(savedRole === 'admin' ? 'role-admin' : 'role-operator');
+                // Hide modal immediately via style injection to prevent flash, actual hiding happens on load
+                const style = document.createElement('style');
+                style.innerHTML = '#login-modal { display: none !important; }';
+                document.head.appendChild(style);
+                
+                // Remove style and use class once loaded (optional, but cleaner)
+                window.addEventListener('load', () => {
+                    const modal = document.getElementById('login-modal');
+                    if(modal) modal.classList.add('hidden');
+                    style.remove();
+                });
+            }
+        })();
+
         function selectRole(role) {
             selectedRole = role;
             const btnOp = document.getElementById('btn-role-operator');
@@ -767,11 +786,15 @@
         }
 
         window.logout = function() {
+            localStorage.removeItem('callout_user_role'); // Clear saved session
             document.body.classList.remove('role-admin', 'role-operator');
+            
             const modal = document.getElementById('login-modal');
             modal.classList.remove('hidden');
-            // Slight delay to ensure 'hidden' is removed before opacity transition kicks in (if needed), 
-            // but primarily just ensuring it's visible.
+            
+            // Remove any inline style that might hide it (from auto-login)
+            modal.style.display = '';
+
             requestAnimationFrame(() => {
                 modal.classList.remove('opacity-0', 'pointer-events-none');
             });
@@ -784,6 +807,7 @@
         };
 
         function completeLogin(role) {
+            localStorage.setItem('callout_user_role', role); // Save session
             document.body.classList.remove('role-admin', 'role-operator');
             document.body.classList.add(role === 'admin' ? 'role-admin' : 'role-operator');
             
