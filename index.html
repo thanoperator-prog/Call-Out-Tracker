@@ -212,7 +212,7 @@
     <!-- Mobile Bottom Nav -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around pt-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
@@ -538,7 +538,7 @@
                                 <div id="view-reason" class="p-5 bg-white rounded-2xl border border-slate-200 text-sm text-slate-600 leading-relaxed shadow-sm"></div>
                             </div>
                             <div>
-                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Corrective Remarks</label>
+                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Root Cause / Note</label>
                                 <div id="view-remarks" class="p-5 bg-yellow-50/50 rounded-2xl border border-yellow-100 text-sm text-slate-600 leading-relaxed shadow-sm"></div>
                             </div>
                         </div>
@@ -618,8 +618,8 @@
                     <textarea name="reason" id="form-reason" required rows="3" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Details of the call-out..."></textarea>
                 </div>
                 <div class="space-y-2">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Corrective Remarks</label>
-                    <textarea name="remarks" id="form-remarks" rows="2" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Feedback from Lead..."></textarea>
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Root Cause / Note</label>
+                    <textarea name="remarks" id="form-remarks" rows="2" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Explain why the incident occurred..."></textarea>
                 </div>
             </form>
             <div class="p-8 bg-slate-50/50 border-t border-slate-100 flex gap-4">
@@ -1153,12 +1153,22 @@
                             <h4 class="font-bold text-orange-700 text-xs uppercase mb-1">Dispute Pending Review</h4>
                             <p class="text-sm text-slate-600 italic bg-white p-3 rounded-lg border border-orange-100">"${r.disputeReason}"</p>
                             ${isAdmin ? `
-                            <div class="flex gap-2 mt-3">
-                                <button onclick="window.resolveDispute(${index}, true)" class="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 shadow-sm transition-all flex items-center gap-1">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
-                                    Approve (Void Record)
-                                </button>
-                                <button onclick="window.resolveDispute(${index}, false)" class="px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 shadow-sm transition-all">Reject Dispute</button>
+                            <div id="admin-dispute-actions">
+                                <div class="flex gap-2 mt-3">
+                                    <button onclick="window.resolveDispute(${index}, true)" class="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 shadow-sm transition-all flex items-center gap-1">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                                        Approve (Void Record)
+                                    </button>
+                                    <button onclick="document.getElementById('admin-reject-input').classList.remove('hidden'); document.getElementById('admin-dispute-actions').classList.add('hidden');" class="px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 shadow-sm transition-all">Reject Dispute</button>
+                                </div>
+                            </div>
+                            <div id="admin-reject-input" class="hidden mt-3 space-y-3 bg-red-50/50 p-3 rounded-xl border border-red-100">
+                                <label class="text-[10px] font-black text-red-400 uppercase tracking-widest block">Reason for Rejection</label>
+                                <textarea id="reject-reason-text" class="w-full bg-white border border-red-200 rounded-xl p-3 text-xs text-red-900 focus:ring-2 focus:ring-red-500 outline-none" rows="2" placeholder="Why is this dispute being rejected?"></textarea>
+                                <div class="flex gap-2">
+                                    <button onclick="window.resolveDispute(${index}, false, document.getElementById('reject-reason-text').value)" class="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 shadow-md">Confirm Reject</button>
+                                    <button onclick="document.getElementById('admin-reject-input').classList.add('hidden'); document.getElementById('admin-dispute-actions').classList.remove('hidden');" class="px-4 py-2 bg-white border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50">Cancel</button>
+                                </div>
                             </div>
                             ` : `<p class="text-[10px] text-orange-400 mt-2 font-bold">Waiting for Operations Lead to review.</p>`}
                         </div>
@@ -1175,14 +1185,17 @@
                     </div>
                 </div>`;
             } else if (r.disputeStatus === 'rejected') {
-                 disputeHtml += `<div class="bg-red-50 p-4 rounded-xl border border-red-100 mb-4 flex items-center gap-3">
-                    <div class="p-2 bg-red-100 text-red-600 rounded-lg">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                 disputeHtml += `<div class="bg-red-50 p-4 rounded-xl border border-red-100 mb-4 flex flex-col gap-2">
+                    <div class="flex items-center gap-3">
+                        <div class="p-2 bg-red-100 text-red-600 rounded-lg">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
+                        </div>
+                        <div>
+                            <h4 class="font-bold text-red-700 text-xs uppercase">Dispute Rejected</h4>
+                            <p class="text-[10px] text-red-600 font-bold">The dispute was reviewed and denied. Record remains active.</p>
+                        </div>
                     </div>
-                    <div>
-                        <h4 class="font-bold text-red-700 text-xs uppercase">Dispute Rejected</h4>
-                        <p class="text-[10px] text-red-600 font-bold">The dispute was reviewed and denied. Record remains active.</p>
-                    </div>
+                    ${r.disputeRejectionReason ? `<div class="ml-11 bg-white p-3 rounded-lg border border-red-100 text-xs text-red-800 italic">"Note from Lead: ${r.disputeRejectionReason}"</div>` : ''}
                 </div>`;
             }
 
@@ -1264,7 +1277,12 @@
             window.viewRecord(index); // Refresh view
         };
 
-        window.resolveDispute = async function(index, isApproved) {
+        window.resolveDispute = async function(index, isApproved, reason = '') {
+            if (!isApproved && !reason.trim()) {
+                if(window.showToast) window.showToast("Rejection reason is required.");
+                return;
+            }
+
             const action = isApproved ? "Approve" : "Reject";
             const confirmed = await AppModal.show(`${action} Dispute`, `Are you sure you want to ${action.toLowerCase()} this dispute?`, "confirm");
             if (!confirmed) return;
@@ -1272,7 +1290,8 @@
             const r = window.records[index];
             const updates = {
                 disputeStatus: isApproved ? 'approved' : 'rejected',
-                isDisputed: isApproved // IMPORTANT: This triggers the void logic in stats
+                isDisputed: isApproved, // IMPORTANT: This triggers the void logic in stats
+                disputeRejectionReason: isApproved ? null : reason
             };
 
             // Optimistic Update
@@ -1284,8 +1303,9 @@
             }
 
             if(window.showToast) window.showToast(`Dispute ${isApproved ? 'Approved' : 'Rejected'}`);
-            window.viewRecord(index); // Refresh view
-            // Also refresh background lists if needed
+            
+            // Immediate reflection
+            window.viewRecord(index); 
             if(window.renderAll) window.renderAll();
         };
 
@@ -1686,245 +1706,22 @@
             });
         }
 
-        // Settings Renderer
-        function renderSettings() {
-            const renderList = (type, targetId) => {
-                const list = document.getElementById(targetId);
-                list.innerHTML = '';
-                [...window.config[type]].sort().forEach(item => {
-                    const li = document.createElement('li');
-                    li.className = "flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all";
-                    li.innerHTML = `<span class="font-bold text-sm text-slate-700">${item}</span>`;
-                    const btn = document.createElement('button');
-                    btn.className = "text-red-300 hover:text-red-600 font-bold px-2 text-xl";
-                    btn.innerHTML = "&times;";
-                    btn.onclick = () => removeItem(type, item);
-                    li.appendChild(btn);
-                    list.appendChild(li);
-                });
-            };
-
-            renderList('brands', 'list-brands');
-            renderList('lols', 'list-lols');
-            renderList('ams', 'list-ams');
-            renderList('als', 'list-als');
-            renderList('hosts', 'list-hosts');
-            renderList('qas', 'list-qas');
-
-            const ocontainer = document.getElementById('list-los');
-            ocontainer.innerHTML = '';
-            [...window.config.lols].sort().forEach(lead => {
-                const leadOperators = [...window.config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
-                if (leadOperators.length > 0) {
-                    let group = document.createElement('div');
-                    group.className = "space-y-4";
-                    group.innerHTML = `<h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
-                    leadOperators.forEach(o => {
-                        let brandTags = (o.brands || []).map(b => `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">${b}</span>`).join('');
-                        let item = document.createElement('div');
-                        item.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4";
-                        item.innerHTML = `<div class="flex-1"><div class="font-bold text-slate-900">${o.name}</div><div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div></div>`;
-                        let acts = document.createElement('div');
-                        acts.className = "flex items-center gap-3 w-full sm:w-auto";
-                        let editBtn = document.createElement('button');
-                        editBtn.className = "p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold";
-                        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>`;
-                        editBtn.onclick = () => openEditOperatorModal(o.name);
-                        let del = document.createElement('button');
-                        del.className = "p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold";
-                        del.innerHTML = "&times;";
-                        del.onclick = () => removeItem('los', o.name);
-                        acts.appendChild(editBtn); acts.appendChild(del);
-                        item.appendChild(acts); group.querySelector('div').appendChild(item);
-                    });
-                    ocontainer.appendChild(group);
-                }
-            });
-        }
-
-        // --- Other Helpers (ToggleModal, AppModal, etc. same as above) ---
-        function openEditOperatorModal(name) {
-            const op = window.config.los.find(o => o.name === name);
-            if(!op) return;
-            document.getElementById('edit-op-original-name').value = op.name;
-            document.getElementById('edit-op-name').value = op.name;
-            const leadSelect = document.getElementById('edit-op-lead');
-            leadSelect.innerHTML = window.config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
-            leadSelect.value = op.lead;
-            const brandsContainer = document.getElementById('edit-op-brands');
-            brandsContainer.innerHTML = '';
-            [...window.config.brands].sort().forEach(b => {
-                const isChecked = (op.brands || []).includes(b);
-                const div = document.createElement('div');
-                div.className = "flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer";
-                div.innerHTML = `<input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
-                div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
-                brandsContainer.appendChild(div);
-            });
-            toggleModal('edit-operator-modal', true);
-        }
-
-        async function saveOperatorChanges() {
-            const originalName = document.getElementById('edit-op-original-name').value;
-            const newName = document.getElementById('edit-op-name').value.trim();
-            const newLead = document.getElementById('edit-op-lead').value;
-            const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
-            if (!newName) { if(window.showToast) window.showToast("Name is required"); return; }
-            const idx = window.config.los.findIndex(o => o.name === originalName);
-            if (idx === -1) return;
-            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { if(window.showToast) window.showToast("Name taken"); return; }
-            const confirmed = await AppModal.show("Update Operator", `Save changes?`, 'confirm');
-            if (confirmed) {
-                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
-                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                toggleModal('edit-operator-modal', false); if(window.showToast) window.showToast("Operator updated");
-            }
-        }
-
-        async function removeItem(type, id) {
-            const confirmed = await AppModal.show("Delete Item", `Delete "${id}"?`, 'confirm');
-            if(confirmed) {
-                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
-                else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
-                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                if(window.showToast) window.showToast("Item deleted");
-            }
-        }
-
-        async function addItem(type, inputId) {
-            const input = document.getElementById(inputId);
-            const val = input.value.trim();
-            if(!val) return;
-            if(window.config[type].includes(val)) { if(window.showToast) window.showToast("Exists already"); return; }
+        function handleLogDateFilterChange() {
+            const filterType = document.getElementById('log-date-filter').value;
+            const monthPicker = document.getElementById('log-month-picker');
             
-            // Check for duplicate in personnel roles
-             if(['ams', 'als', 'hosts', 'qas'].includes(type)) {
-                const foundRole = roleCategories.find(cat => window.config[cat.id].includes(val));
-                if (foundRole) {
-                    await AppModal.show("Duplicate Entry", `"${val}" is already registered under ${foundRole.label}.`, 'alert');
-                    return;
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    monthPicker.value = `${now.getFullYear()}-${month}`;
                 }
+            } else {
+                monthPicker.classList.add('hidden');
             }
-
-            const confirmed = await AppModal.show("Add Entry", `Register "${val}"?`, 'confirm');
-            if(confirmed) {
-                window.config[type].push(val);
-                input.value = '';
-                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                if(window.showToast) window.showToast("Entry registered");
-            }
-        }
-
-        async function addOperatorRelationship() {
-            const name = document.getElementById('new-lo-name').value.trim();
-            const lead = document.getElementById('new-lo-lead').value;
-             const selectedBrands = Array.from(document.querySelectorAll('#brand-checklist input:checked')).map(cb => cb.value);
-
-            if(name && lead) {
-                if(window.config.los.some(o => o.name === name)) { if(window.showToast) window.showToast("Operator exists"); return; }
-                const confirmed = await AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
-                if(confirmed) {
-                    window.config.los.push({ name, lead, brands: selectedBrands });
-                    document.getElementById('new-lo-name').value = '';
-                     document.querySelectorAll('#brand-checklist input').forEach(cb => cb.checked = false);
-                    if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                    if(window.showToast) window.showToast("Operator created");
-                }
-            } else { if(window.showToast) window.showToast("Fill all fields"); }
-        }
-
-        async function deleteRecord(index) {
-            const rec = window.records[index];
-            if(!rec) return;
-            const confirmed = await AppModal.show("Delete Record", "Permanently delete this record?", 'confirm');
-            if(confirmed) {
-                if(window.deleteFirebaseRecord && rec.id) await window.deleteFirebaseRecord(rec.id);
-                else { window.records.splice(index, 1); saveRecords(); renderAll(); }
-            }
-        }
-        
-        // Export to Excel function
-        window.exportToExcel = async function() {
-            try {
-                if(window.records.length === 0) {
-                    if(window.showToast) window.showToast("No records to export.");
-                    return;
-                }
-                
-                const workbook = new ExcelJS.Workbook();
-                const worksheet = workbook.addWorksheet('Call-out Logs');
-                
-                worksheet.columns = [
-                    { header: 'Date & Time', key: 'datetime', width: 20 },
-                    { header: 'Brand', key: 'brand', width: 15 },
-                    { header: 'Reporter', key: 'who', width: 20 },
-                    { header: 'Reason', key: 'reason', width: 40 },
-                    { header: 'Lead', key: 'lol', width: 20 },
-                    { header: 'Operator', key: 'lo', width: 20 },
-                    { header: 'Remarks', key: 'remarks', width: 30 },
-                    { header: 'Image', key: 'image', width: 15 }
-                ];
-                
-                // Add rows
-                for (const record of window.records) {
-                    const rowData = {
-                        datetime: new Date(record.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' }),
-                        brand: record.brand,
-                        who: record.who,
-                        reason: record.reason,
-                        lol: Array.isArray(record.lol) ? record.lol.join(', ') : record.lol,
-                        lo: Array.isArray(record.lo) ? record.lo.join(', ') : record.lo,
-                        remarks: record.remarks || ''
-                    };
-                    const row = worksheet.addRow(rowData);
-                    
-                    if (record.proof) {
-                        try {
-                            const imageId = workbook.addImage({
-                                base64: record.proof,
-                                extension: 'png',
-                            });
-                            worksheet.addImage(imageId, {
-                                tl: { col: 7, row: row.number - 1 },
-                                ext: { width: 50, height: 50 }
-                            });
-                            row.height = 40;
-                        } catch (err) {
-                            console.error("Error adding image to excel", err);
-                        }
-                    }
-                }
-                
-                const buffer = await workbook.xlsx.writeBuffer();
-                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                saveAs(blob, `Callout_Tracker_${new Date().toISOString().slice(0,10)}.xlsx`);
-                if(window.showToast) window.showToast("Export successful!");
-            } catch (e) {
-                console.error("Export Error:", e);
-                if(window.showToast) window.showToast("Export failed.");
-            }
-        };
-
-        // View Image
-        function viewImage(src) {
-            const win = window.open("");
-            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
-        }
-        
-        function filterBrandCheckboxes(inputId, containerId) {
-            const input = document.getElementById(inputId);
-            const filter = input.value.toLowerCase();
-            const container = document.getElementById(containerId);
-            const items = container.children;
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const span = item.querySelector('span');
-                if (span) {
-                    const text = span.textContent || span.innerText;
-                    if (text.toLowerCase().indexOf(filter) > -1) { item.style.display = "flex"; } 
-                    else { item.style.display = "none"; }
-                }
-            }
+            renderLogs();
+            renderLogTabs();
         }
         
         function handleDashboardFilterChange() {
@@ -1978,6 +1775,28 @@
             }
         }
         
+        // View Image
+        function viewImage(src) {
+            const win = window.open("");
+            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
+        }
+        
+        function filterBrandCheckboxes(inputId, containerId) {
+            const input = document.getElementById(inputId);
+            const filter = input.value.toLowerCase();
+            const container = document.getElementById(containerId);
+            const items = container.children;
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const span = item.querySelector('span');
+                if (span) {
+                    const text = span.textContent || span.innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) { item.style.display = "flex"; } 
+                    else { item.style.display = "none"; }
+                }
+            }
+        }
+
         // Hook into existing init
         const originalInit = window.onload;
         window.onload = () => {
@@ -1986,12 +1805,63 @@
         };
 
         // Re-run populate when brands change (hook into renderSettings)
-        const originalRenderSettings = renderSettings;
-        renderSettings = function() {
-            originalRenderSettings();
-            populateBrandChecklist();
-        };
+        function renderSettings() {
+            const renderList = (type, targetId) => {
+                const list = document.getElementById(targetId);
+                list.innerHTML = '';
+                [...window.config[type]].sort().forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = "flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all";
+                    li.innerHTML = `<span class="font-bold text-sm text-slate-700">${item}</span>`;
+                    const btn = document.createElement('button');
+                    btn.className = "text-red-300 hover:text-red-600 font-bold px-2 text-xl";
+                    btn.innerHTML = "&times;";
+                    btn.onclick = () => removeItem(type, item);
+                    li.appendChild(btn);
+                    list.appendChild(li);
+                });
+            };
 
+            renderList('brands', 'list-brands');
+            renderList('lols', 'list-lols');
+            renderList('ams', 'list-ams');
+            renderList('als', 'list-als');
+            renderList('hosts', 'list-hosts');
+            renderList('qas', 'list-qas');
+
+            const ocontainer = document.getElementById('list-los');
+            ocontainer.innerHTML = '';
+            [...window.config.lols].sort().forEach(lead => {
+                const leadOperators = [...window.config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
+                if (leadOperators.length > 0) {
+                    let group = document.createElement('div');
+                    group.className = "space-y-4";
+                    group.innerHTML = `<h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
+                    leadOperators.forEach(o => {
+                        let brandTags = (o.brands || []).map(b => `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">${b}</span>`).join('');
+                        let item = document.createElement('div');
+                        item.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4";
+                        item.innerHTML = `<div class="flex-1"><div class="font-bold text-slate-900">${o.name}</div><div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div></div>`;
+                        let acts = document.createElement('div');
+                        acts.className = "flex items-center gap-3 w-full sm:w-auto";
+                        let editBtn = document.createElement('button');
+                        editBtn.className = "p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold";
+                        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>`;
+                        editBtn.onclick = () => openEditOperatorModal(o.name);
+                        let del = document.createElement('button');
+                        del.className = "p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold";
+                        del.innerHTML = "&times;";
+                        del.onclick = () => removeItem('los', o.name);
+                        acts.appendChild(editBtn); acts.appendChild(del);
+                        item.appendChild(acts); group.querySelector('div').appendChild(item);
+                    });
+                    ocontainer.appendChild(group);
+                }
+            });
+            
+            // Re-populate checklist whenever settings render
+            populateBrandChecklist();
+        }
     </script>
 </body>
 </html>
