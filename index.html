@@ -229,7 +229,6 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 mb-24 lg:mb-0">
         <!-- SECTION: DASHBOARD -->
         <section id="dashboard" class="space-y-8 animate-in fade-in duration-500">
-            <!-- (Dashboard content remains unchanged) -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 class="text-3xl font-extrabold text-slate-900">Operations Analytics</h1>
@@ -281,7 +280,7 @@
                     </div>
                     <span id="coaching-period-label" class="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">Overall</span>
                 </div>
-                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
                     <!-- Coaching items injected here -->
                 </div>
             </div>
@@ -724,6 +723,43 @@
         </div>
     </div>
 
+    <!-- NEW: Operator History Modal -->
+    <div id="operator-history-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md hidden z-[60] flex items-center justify-center p-4 modal-overlay opacity-0">
+        <div class="bg-white rounded-[2.5rem] w-full max-w-4xl overflow-hidden shadow-2xl modal-container opacity-0 scale-90 flex flex-col max-h-[85vh]">
+            <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                <div class="flex items-center gap-3">
+                     <div class="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+                     </div>
+                    <div>
+                        <h2 id="op-history-title" class="text-xl font-black text-slate-900 tracking-tight">Operator History</h2>
+                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">All Records</p>
+                    </div>
+                </div>
+                <button onclick="toggleModal('operator-history-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-0">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] font-black tracking-widest sticky top-0 z-10 shadow-sm">
+                        <tr>
+                            <th class="px-6 py-4">Date</th>
+                            <th class="px-6 py-4">Brand</th>
+                            <th class="px-6 py-4">Reason</th>
+                            <th class="px-6 py-4 text-center">Status</th>
+                            <th class="px-6 py-4 text-right">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="op-history-list" class="divide-y divide-slate-50"></tbody>
+                </table>
+            </div>
+            
+            <div class="p-6 bg-slate-50/80 border-t border-slate-100 flex justify-end">
+                <button onclick="toggleModal('operator-history-modal', false)" class="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all text-xs">Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 3. MAIN SCRIPT (Uses window variables directly) -->
     <script>
         // --- LOGIN LOGIC ---
@@ -1024,6 +1060,9 @@
                 renderAll();
                 showSection('dashboard');
                 window.isInitialized = true;
+                
+                // Extra init calls
+                populateBrandChecklist();
             } catch (e) { console.error("Init Error:", e); }
         };
 
@@ -1480,6 +1519,49 @@
             populateSelects();
         }
 
+        // NEW: Operator History
+        window.openOperatorHistory = function(name) {
+            const opRecords = window.records.filter(r => {
+                // If r.lo is array, check if it includes name
+                if(Array.isArray(r.lo)) return r.lo.includes(name);
+                return r.lo === name;
+            });
+            
+            // Sort
+            opRecords.sort((a,b) => new Date(b.datetime) - new Date(a.datetime));
+
+            document.getElementById('op-history-title').innerText = name;
+            const list = document.getElementById('op-history-list');
+            list.innerHTML = '';
+            
+            if(opRecords.length === 0) {
+                list.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-xs text-slate-400 italic">No records found for this operator.</td></tr>`;
+            } else {
+                opRecords.forEach(r => {
+                    const originalIdx = window.records.findIndex(rec => rec.id === r.id);
+                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+                    
+                    let statusBadge = '<span class="bg-green-100 text-green-600 px-2 py-1 rounded text-[10px] font-bold">VALID</span>';
+                    if (r.isDisputed) statusBadge = '<span class="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-bold">VOID</span>';
+                    else if (r.disputeStatus === 'pending') statusBadge = '<span class="bg-orange-100 text-orange-600 px-2 py-1 rounded text-[10px] font-bold">PENDING</span>';
+
+                    list.innerHTML += `
+                        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 cursor-pointer" onclick="toggleModal('operator-history-modal', false); setTimeout(() => viewRecord(${originalIdx}), 300)">
+                            <td class="px-6 py-4 font-bold text-slate-900 whitespace-nowrap">${date}</td>
+                            <td class="px-6 py-4 font-medium text-slate-600">${r.brand}</td>
+                            <td class="px-6 py-4 text-slate-500 italic truncate max-w-[150px]">${r.reason}</td>
+                            <td class="px-6 py-4 text-center">${statusBadge}</td>
+                            <td class="px-6 py-4 text-right">
+                                <button class="text-blue-600 hover:text-blue-800 text-[10px] font-bold uppercase">View</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            
+            toggleModal('operator-history-modal', true);
+        }
+
         function populateSelects() {
             if(!window.config.lols) return;
             const sortedLeads = [...window.config.lols].sort();
@@ -1544,7 +1626,9 @@
                          if(opName) operatorCounts[opName] = (operatorCounts[opName] || 0) + 1;
                     });
                 });
-                const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a).slice(0, 6);
+                // Remove Limit! Use all valid records
+                const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a);
+                
                 coachingContainer.innerHTML = '';
                 if(sortedOperators.length === 0) {
                     coachingContainer.innerHTML = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded</div>`;
@@ -1552,8 +1636,23 @@
                     const maxCount = sortedOperators[0][1];
                     sortedOperators.forEach(([name, count], index) => {
                         const percentage = (count / maxCount) * 100;
-                        const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : 'bg-blue-400');
-                        coachingContainer.innerHTML += `<div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100"><div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm">${index + 1}</div><div class="flex-1"><div class="flex justify-between items-center mb-1"><span class="text-xs font-bold text-slate-700 truncate max-w-[100px]">${name}</span><span class="text-[10px] font-black text-slate-400">${count} Calls</span></div><div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${barColor} rounded-full" style="width: ${percentage}%"></div></div></div></div>`;
+                        // Keep colorful top 3, standard blue for others
+                        const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : (index === 2 ? 'bg-blue-400' : 'bg-slate-400'));
+                        
+                        // Added ONCLICK for pop-up history
+                        coachingContainer.innerHTML += `
+                        <div onclick="openOperatorHistory('${name}')" class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-blue-50/50 transition-all group">
+                            <div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm group-hover:text-blue-600 transition-colors">${index + 1}</div>
+                            <div class="flex-1">
+                                <div class="flex justify-between items-center mb-1">
+                                    <span class="text-xs font-bold text-slate-700 truncate max-w-[100px] group-hover:text-blue-700 transition-colors">${name}</span>
+                                    <span class="text-[10px] font-black text-slate-400">${count} Calls</span>
+                                </div>
+                                <div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
+                                    <div class="h-full ${barColor} rounded-full" style="width: ${percentage}%"></div>
+                                </div>
+                            </div>
+                        </div>`;
                     });
                 }
             }
@@ -1790,95 +1889,19 @@
             populateBrandChecklist();
         }
 
-        // --- Other Helpers (ToggleModal, AppModal, etc. same as above) ---
-        function openEditOperatorModal(name) {
-            const op = window.config.los.find(o => o.name === name);
-            if(!op) return;
-            document.getElementById('edit-op-original-name').value = op.name;
-            document.getElementById('edit-op-name').value = op.name;
-            const leadSelect = document.getElementById('edit-op-lead');
-            leadSelect.innerHTML = window.config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
-            leadSelect.value = op.lead;
-            const brandsContainer = document.getElementById('edit-op-brands');
-            brandsContainer.innerHTML = '';
-            [...window.config.brands].sort().forEach(b => {
-                const isChecked = (op.brands || []).includes(b);
-                const div = document.createElement('div');
-                div.className = "flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer";
-                div.innerHTML = `<input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
-                div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
-                brandsContainer.appendChild(div);
-            });
-            toggleModal('edit-operator-modal', true);
-        }
-
-        async function saveOperatorChanges() {
-            const originalName = document.getElementById('edit-op-original-name').value;
-            const newName = document.getElementById('edit-op-name').value.trim();
-            const newLead = document.getElementById('edit-op-lead').value;
-            const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
-            if (!newName) { if(window.showToast) window.showToast("Name is required"); return; }
-            const idx = window.config.los.findIndex(o => o.name === originalName);
-            if (idx === -1) return;
-            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { if(window.showToast) window.showToast("Name taken"); return; }
-            const confirmed = await AppModal.show("Update Operator", `Save changes?`, 'confirm');
-            if (confirmed) {
-                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
-                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                toggleModal('edit-operator-modal', false); if(window.showToast) window.showToast("Operator updated");
+        function populateBrandChecklist() {
+            const container = document.getElementById('brand-checklist');
+            if (!container) return;
+            container.innerHTML = '';
+            if (window.config && window.config.brands) {
+                [...window.config.brands].sort().forEach(b => {
+                    const div = document.createElement('div');
+                    div.className = "flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item";
+                    div.innerHTML = `<input type="checkbox" value="${b}"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
+                    div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
+                    container.appendChild(div);
+                });
             }
-        }
-
-        async function removeItem(type, id) {
-            const confirmed = await AppModal.show("Delete Item", `Delete "${id}"?`, 'confirm');
-            if(confirmed) {
-                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
-                else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
-                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                if(window.showToast) window.showToast("Item deleted");
-            }
-        }
-
-        async function addItem(type, inputId) {
-            const input = document.getElementById(inputId);
-            const val = input.value.trim();
-            if(!val) return;
-            if(window.config[type].includes(val)) { if(window.showToast) window.showToast("Exists already"); return; }
-            
-            // Check for duplicate in personnel roles
-             if(['ams', 'als', 'hosts', 'qas'].includes(type)) {
-                const foundRole = roleCategories.find(cat => window.config[cat.id].includes(val));
-                if (foundRole) {
-                    await AppModal.show("Duplicate Entry", `"${val}" is already registered under ${foundRole.label}.`, 'alert');
-                    return;
-                }
-            }
-
-            const confirmed = await AppModal.show("Add Entry", `Register "${val}"?`, 'confirm');
-            if(confirmed) {
-                window.config[type].push(val);
-                input.value = '';
-                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                if(window.showToast) window.showToast("Entry registered");
-            }
-        }
-
-        async function addOperatorRelationship() {
-            const name = document.getElementById('new-lo-name').value.trim();
-            const lead = document.getElementById('new-lo-lead').value;
-             const selectedBrands = Array.from(document.querySelectorAll('#brand-checklist input:checked')).map(cb => cb.value);
-
-            if(name && lead) {
-                if(window.config.los.some(o => o.name === name)) { if(window.showToast) window.showToast("Operator exists"); return; }
-                const confirmed = await AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
-                if(confirmed) {
-                    window.config.los.push({ name, lead, brands: selectedBrands });
-                    document.getElementById('new-lo-name').value = '';
-                     document.querySelectorAll('#brand-checklist input').forEach(cb => cb.checked = false);
-                    if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                    if(window.showToast) window.showToast("Operator created");
-                }
-            } else { if(window.showToast) window.showToast("Fill all fields"); }
         }
 
         window.deleteRecord = async function(index) {
@@ -1888,72 +1911,18 @@
             if(confirmed) {
                 if(window.deleteFirebaseRecord && rec.id) {
                     await window.deleteFirebaseRecord(rec.id);
+                } else {
+                    window.records.splice(index, 1);
+                    saveRecords();
+                    renderAll();
                 }
             }
         };
-        
-        // Export to Excel function
-        window.exportToExcel = async function() {
-            try {
-                if(window.records.length === 0) {
-                    if(window.showToast) window.showToast("No records to export.");
-                    return;
-                }
-                
-                const workbook = new ExcelJS.Workbook();
-                const worksheet = workbook.addWorksheet('Call-out Logs');
-                
-                worksheet.columns = [
-                    { header: 'Date & Time', key: 'datetime', width: 20 },
-                    { header: 'Brand', key: 'brand', width: 15 },
-                    { header: 'Reporter', key: 'who', width: 20 },
-                    { header: 'Reason', key: 'reason', width: 40 },
-                    { header: 'Lead', key: 'lol', width: 20 },
-                    { header: 'Operator', key: 'lo', width: 20 },
-                    { header: 'Remarks', key: 'remarks', width: 30 },
-                    { header: 'Image', key: 'image', width: 15 }
-                ];
-                
-                // Add rows
-                for (const record of window.records) {
-                    const rowData = {
-                        datetime: new Date(record.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' }),
-                        brand: record.brand,
-                        who: record.who,
-                        reason: record.reason,
-                        lol: Array.isArray(record.lol) ? record.lol.join(', ') : record.lol,
-                        lo: Array.isArray(record.lo) ? record.lo.join(', ') : record.lo,
-                        remarks: record.remarks || ''
-                    };
-                    const row = worksheet.addRow(rowData);
-                    
-                    if (record.proof) {
-                        try {
-                            const imageId = workbook.addImage({
-                                base64: record.proof,
-                                extension: 'png',
-                            });
-                            worksheet.addImage(imageId, {
-                                tl: { col: 7, row: row.number - 1 },
-                                ext: { width: 50, height: 50 }
-                            });
-                            row.height = 40;
-                        } catch (err) {
-                            console.error("Error adding image to excel", err);
-                        }
-                    }
-                }
-                
-                const buffer = await workbook.xlsx.writeBuffer();
-                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-                saveAs(blob, `Callout_Tracker_${new Date().toISOString().slice(0,10)}.xlsx`);
-                if(window.showToast) window.showToast("Export successful!");
-            } catch (e) {
-                console.error("Export Error:", e);
-                if(window.showToast) window.showToast("Export failed.");
-            }
-        };
-        
+
+        function saveRecords() {
+            localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
+        }
+
         function viewImage(src) {
             const win = window.open("");
             win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
@@ -2009,36 +1978,6 @@
             if(id === 'record-log') { renderLogTabs(); renderLogs(); }
             if(id === 'dashboard') { renderDashboard(); }
         }
-        
-        // Populate brand checklist for new operator initially
-        function populateBrandChecklist() {
-            const container = document.getElementById('brand-checklist');
-            if (!container) return;
-            container.innerHTML = '';
-            if (window.config && window.config.brands) {
-                [...window.config.brands].sort().forEach(b => {
-                    const div = document.createElement('div');
-                    div.className = "flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item";
-                    div.innerHTML = `<input type="checkbox" value="${b}"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
-                    div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
-                    container.appendChild(div);
-                });
-            }
-        }
-        
-        // Hook into existing init
-        const originalInit = window.onload;
-        window.onload = () => {
-             if (originalInit) originalInit();
-             populateBrandChecklist();
-        };
-
-        // Re-run populate when brands change (hook into renderSettings)
-        const originalRenderSettings = renderSettings;
-        renderSettings = function() {
-            originalRenderSettings();
-            populateBrandChecklist();
-        };
 
     </script>
 </body>
