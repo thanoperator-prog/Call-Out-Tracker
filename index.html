@@ -229,6 +229,7 @@
     <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 mb-24 lg:mb-0">
         <!-- SECTION: DASHBOARD -->
         <section id="dashboard" class="space-y-8 animate-in fade-in duration-500">
+            <!-- (Dashboard content remains unchanged) -->
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 class="text-3xl font-extrabold text-slate-900">Operations Analytics</h1>
@@ -1706,105 +1707,7 @@
             });
         }
 
-        function handleLogDateFilterChange() {
-            const filterType = document.getElementById('log-date-filter').value;
-            const monthPicker = document.getElementById('log-month-picker');
-            
-            if (filterType === 'specific_month') {
-                monthPicker.classList.remove('hidden');
-                if (!monthPicker.value) {
-                    const now = new Date();
-                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-                    monthPicker.value = `${now.getFullYear()}-${month}`;
-                }
-            } else {
-                monthPicker.classList.add('hidden');
-            }
-            renderLogs();
-            renderLogTabs();
-        }
-        
-        function handleDashboardFilterChange() {
-            const filterType = document.getElementById('dashboard-filter').value;
-            const monthPicker = document.getElementById('dashboard-month-picker');
-            if (filterType === 'specific_month') {
-                monthPicker.classList.remove('hidden');
-                if (!monthPicker.value) {
-                    const now = new Date();
-                    monthPicker.value = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
-                }
-            } else { monthPicker.classList.add('hidden'); }
-            renderDashboard();
-        }
-        
-        function switchSettingsTab(tab) {
-            document.querySelectorAll('.setting-tab').forEach(t => { t.classList.remove('bg-blue-50', 'text-blue-600'); t.classList.add('text-slate-500'); });
-            const act = document.getElementById(`tab-${tab}`);
-            if(act) { act.classList.remove('text-slate-500'); act.classList.add('bg-blue-50', 'text-blue-600'); }
-            document.querySelectorAll('.setting-panel').forEach(p => p.classList.add('hidden'));
-            document.getElementById(`set-${tab}`).classList.remove('hidden');
-        }
-        
-        function showSection(id) {
-            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
-            document.getElementById(id).classList.remove('hidden');
-            document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active-tab'));
-            const map = ['dashboard', 'record-log', 'settings'];
-            const idx = map.indexOf(id);
-            if(idx !== -1) document.querySelectorAll('.nav-link')[idx].classList.add('active-tab');
-            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('mobile-active'));
-            const mob = document.getElementById(`mob-${id}`);
-            if(mob) mob.classList.add('mobile-active');
-            if(id === 'record-log') { renderLogTabs(); renderLogs(); }
-            if(id === 'dashboard') { renderDashboard(); }
-        }
-        
-        // Populate brand checklist for new operator initially
-        function populateBrandChecklist() {
-            const container = document.getElementById('brand-checklist');
-            if (!container) return;
-            container.innerHTML = '';
-            if (window.config && window.config.brands) {
-                [...window.config.brands].sort().forEach(b => {
-                    const div = document.createElement('div');
-                    div.className = "flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item";
-                    div.innerHTML = `<input type="checkbox" value="${b}"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
-                    div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
-                    container.appendChild(div);
-                });
-            }
-        }
-        
-        // View Image
-        function viewImage(src) {
-            const win = window.open("");
-            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
-        }
-        
-        function filterBrandCheckboxes(inputId, containerId) {
-            const input = document.getElementById(inputId);
-            const filter = input.value.toLowerCase();
-            const container = document.getElementById(containerId);
-            const items = container.children;
-            for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const span = item.querySelector('span');
-                if (span) {
-                    const text = span.textContent || span.innerText;
-                    if (text.toLowerCase().indexOf(filter) > -1) { item.style.display = "flex"; } 
-                    else { item.style.display = "none"; }
-                }
-            }
-        }
-
-        // Hook into existing init
-        const originalInit = window.onload;
-        window.onload = () => {
-             if (originalInit) originalInit();
-             populateBrandChecklist();
-        };
-
-        // Re-run populate when brands change (hook into renderSettings)
+        // Settings Renderer
         function renderSettings() {
             const renderList = (type, targetId) => {
                 const list = document.getElementById(targetId);
@@ -1862,6 +1765,257 @@
             // Re-populate checklist whenever settings render
             populateBrandChecklist();
         }
+
+        // --- Other Helpers (ToggleModal, AppModal, etc. same as above) ---
+        function openEditOperatorModal(name) {
+            const op = window.config.los.find(o => o.name === name);
+            if(!op) return;
+            document.getElementById('edit-op-original-name').value = op.name;
+            document.getElementById('edit-op-name').value = op.name;
+            const leadSelect = document.getElementById('edit-op-lead');
+            leadSelect.innerHTML = window.config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
+            leadSelect.value = op.lead;
+            const brandsContainer = document.getElementById('edit-op-brands');
+            brandsContainer.innerHTML = '';
+            [...window.config.brands].sort().forEach(b => {
+                const isChecked = (op.brands || []).includes(b);
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer";
+                div.innerHTML = `<input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
+                div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
+                brandsContainer.appendChild(div);
+            });
+            toggleModal('edit-operator-modal', true);
+        }
+
+        async function saveOperatorChanges() {
+            const originalName = document.getElementById('edit-op-original-name').value;
+            const newName = document.getElementById('edit-op-name').value.trim();
+            const newLead = document.getElementById('edit-op-lead').value;
+            const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
+            if (!newName) { if(window.showToast) window.showToast("Name is required"); return; }
+            const idx = window.config.los.findIndex(o => o.name === originalName);
+            if (idx === -1) return;
+            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { if(window.showToast) window.showToast("Name taken"); return; }
+            const confirmed = await AppModal.show("Update Operator", `Save changes?`, 'confirm');
+            if (confirmed) {
+                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                toggleModal('edit-operator-modal', false); if(window.showToast) window.showToast("Operator updated");
+            }
+        }
+
+        async function removeItem(type, id) {
+            const confirmed = await AppModal.show("Delete Item", `Delete "${id}"?`, 'confirm');
+            if(confirmed) {
+                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
+                else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                if(window.showToast) window.showToast("Item deleted");
+            }
+        }
+
+        async function addItem(type, inputId) {
+            const input = document.getElementById(inputId);
+            const val = input.value.trim();
+            if(!val) return;
+            if(window.config[type].includes(val)) { if(window.showToast) window.showToast("Exists already"); return; }
+            
+            // Check for duplicate in personnel roles
+             if(['ams', 'als', 'hosts', 'qas'].includes(type)) {
+                const foundRole = roleCategories.find(cat => window.config[cat.id].includes(val));
+                if (foundRole) {
+                    await AppModal.show("Duplicate Entry", `"${val}" is already registered under ${foundRole.label}.`, 'alert');
+                    return;
+                }
+            }
+
+            const confirmed = await AppModal.show("Add Entry", `Register "${val}"?`, 'confirm');
+            if(confirmed) {
+                window.config[type].push(val);
+                input.value = '';
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                if(window.showToast) window.showToast("Entry registered");
+            }
+        }
+
+        async function addOperatorRelationship() {
+            const name = document.getElementById('new-lo-name').value.trim();
+            const lead = document.getElementById('new-lo-lead').value;
+             const selectedBrands = Array.from(document.querySelectorAll('#brand-checklist input:checked')).map(cb => cb.value);
+
+            if(name && lead) {
+                if(window.config.los.some(o => o.name === name)) { if(window.showToast) window.showToast("Operator exists"); return; }
+                const confirmed = await AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
+                if(confirmed) {
+                    window.config.los.push({ name, lead, brands: selectedBrands });
+                    document.getElementById('new-lo-name').value = '';
+                     document.querySelectorAll('#brand-checklist input').forEach(cb => cb.checked = false);
+                    if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                    if(window.showToast) window.showToast("Operator created");
+                }
+            } else { if(window.showToast) window.showToast("Fill all fields"); }
+        }
+
+        window.deleteRecord = async function(index) {
+            const rec = window.records[index];
+            if(!rec) return;
+            const confirmed = await AppModal.show("Delete Record", "Permanently delete this record?", 'confirm');
+            if(confirmed) {
+                if(window.deleteFirebaseRecord && rec.id) {
+                    await window.deleteFirebaseRecord(rec.id);
+                }
+            }
+        };
+        
+        // Export to Excel function
+        window.exportToExcel = async function() {
+            try {
+                if(window.records.length === 0) {
+                    if(window.showToast) window.showToast("No records to export.");
+                    return;
+                }
+                
+                const workbook = new ExcelJS.Workbook();
+                const worksheet = workbook.addWorksheet('Call-out Logs');
+                
+                worksheet.columns = [
+                    { header: 'Date & Time', key: 'datetime', width: 20 },
+                    { header: 'Brand', key: 'brand', width: 15 },
+                    { header: 'Reporter', key: 'who', width: 20 },
+                    { header: 'Reason', key: 'reason', width: 40 },
+                    { header: 'Lead', key: 'lol', width: 20 },
+                    { header: 'Operator', key: 'lo', width: 20 },
+                    { header: 'Remarks', key: 'remarks', width: 30 },
+                    { header: 'Image', key: 'image', width: 15 }
+                ];
+                
+                // Add rows
+                for (const record of window.records) {
+                    const rowData = {
+                        datetime: new Date(record.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' }),
+                        brand: record.brand,
+                        who: record.who,
+                        reason: record.reason,
+                        lol: Array.isArray(record.lol) ? record.lol.join(', ') : record.lol,
+                        lo: Array.isArray(record.lo) ? record.lo.join(', ') : record.lo,
+                        remarks: record.remarks || ''
+                    };
+                    const row = worksheet.addRow(rowData);
+                    
+                    if (record.proof) {
+                        try {
+                            const imageId = workbook.addImage({
+                                base64: record.proof,
+                                extension: 'png',
+                            });
+                            worksheet.addImage(imageId, {
+                                tl: { col: 7, row: row.number - 1 },
+                                ext: { width: 50, height: 50 }
+                            });
+                            row.height = 40;
+                        } catch (err) {
+                            console.error("Error adding image to excel", err);
+                        }
+                    }
+                }
+                
+                const buffer = await workbook.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                saveAs(blob, `Callout_Tracker_${new Date().toISOString().slice(0,10)}.xlsx`);
+                if(window.showToast) window.showToast("Export successful!");
+            } catch (e) {
+                console.error("Export Error:", e);
+                if(window.showToast) window.showToast("Export failed.");
+            }
+        };
+        
+        function viewImage(src) {
+            const win = window.open("");
+            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
+        }
+        
+        function filterBrandCheckboxes(inputId, containerId) {
+            const input = document.getElementById(inputId);
+            const filter = input.value.toLowerCase();
+            const container = document.getElementById(containerId);
+            const items = container.children;
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                const span = item.querySelector('span');
+                if (span) {
+                    const text = span.textContent || span.innerText;
+                    if (text.toLowerCase().indexOf(filter) > -1) { item.style.display = "flex"; } 
+                    else { item.style.display = "none"; }
+                }
+            }
+        }
+        
+        function handleDashboardFilterChange() {
+            const filterType = document.getElementById('dashboard-filter').value;
+            const monthPicker = document.getElementById('dashboard-month-picker');
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    monthPicker.value = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
+                }
+            } else { monthPicker.classList.add('hidden'); }
+            renderDashboard();
+        }
+        
+        function switchSettingsTab(tab) {
+            document.querySelectorAll('.setting-tab').forEach(t => { t.classList.remove('bg-blue-50', 'text-blue-600'); t.classList.add('text-slate-500'); });
+            const act = document.getElementById(`tab-${tab}`);
+            if(act) { act.classList.remove('text-slate-500'); act.classList.add('bg-blue-50', 'text-blue-600'); }
+            document.querySelectorAll('.setting-panel').forEach(p => p.classList.add('hidden'));
+            document.getElementById(`set-${tab}`).classList.remove('hidden');
+        }
+        
+        function showSection(id) {
+            document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
+            document.getElementById(id).classList.remove('hidden');
+            document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active-tab'));
+            const map = ['dashboard', 'record-log', 'settings'];
+            const idx = map.indexOf(id);
+            if(idx !== -1) document.querySelectorAll('.nav-link')[idx].classList.add('active-tab');
+            document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('mobile-active'));
+            const mob = document.getElementById(`mob-${id}`);
+            if(mob) mob.classList.add('mobile-active');
+            if(id === 'record-log') { renderLogTabs(); renderLogs(); }
+            if(id === 'dashboard') { renderDashboard(); }
+        }
+        
+        // Populate brand checklist for new operator initially
+        function populateBrandChecklist() {
+            const container = document.getElementById('brand-checklist');
+            if (!container) return;
+            container.innerHTML = '';
+            if (window.config && window.config.brands) {
+                [...window.config.brands].sort().forEach(b => {
+                    const div = document.createElement('div');
+                    div.className = "flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item";
+                    div.innerHTML = `<input type="checkbox" value="${b}"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
+                    div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
+                    container.appendChild(div);
+                });
+            }
+        }
+        
+        // Hook into existing init
+        const originalInit = window.onload;
+        window.onload = () => {
+             if (originalInit) originalInit();
+             populateBrandChecklist();
+        };
+
+        // Re-run populate when brands change (hook into renderSettings)
+        const originalRenderSettings = renderSettings;
+        renderSettings = function() {
+            originalRenderSettings();
+            populateBrandChecklist();
+        };
+
     </script>
 </body>
 </html>
