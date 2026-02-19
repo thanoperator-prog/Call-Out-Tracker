@@ -105,8 +105,8 @@
                     setDoc(settingsRef, defaultConfig, { merge: true });
                     window.config = defaultConfig;
                 }
-                if(window.initSearchSelects) window.initSearchSelects(); 
-                if(window.renderSettings) window.renderSettings();
+                // PERFORMANCE FIX: Only render config-related parts
+                window.renderConfigUI();
                 if(window.migrateReporterNames) window.migrateReporterNames();
             }, (error) => console.error("Settings Sync Error:", error));
 
@@ -118,7 +118,9 @@
                 localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
                 window.isInitialized = true;
                 if(window.migrateReporterNames) window.migrateReporterNames();
-                if(window.renderAll) window.renderAll(); 
+                
+                // PERFORMANCE FIX: Only re-render records/tables
+                window.renderRecordsUI(); 
             }, (error) => console.error("Records Sync Error:", error));
         }
 
@@ -212,7 +214,7 @@
     <!-- Mobile Bottom Nav -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around pt-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
@@ -314,15 +316,22 @@
                     <h1 class="text-3xl font-extrabold text-slate-900">History Log</h1>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
+                    <!-- NEW: Brand Filter -->
                     <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
-                        <label for="log-date-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</label>
+                        <label for="log-brand-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Brand:</label>
+                        <select id="log-brand-filter" onchange="window.handleLogBrandFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer max-w-[130px] truncate">
+                            <option value="All">All Brands</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
+                        <label for="log-date-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Date:</label>
                         <select id="log-date-filter" onchange="handleLogDateFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer">
                             <option value="overall">All Time</option>
                             <option value="current_month">Current Month</option>
                             <option value="specific_month">Select Month</option>
                         </select>
                     </div>
-                    <input type="month" id="log-month-picker" onchange="renderLogs(); renderLogTabs();" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                    <input type="month" id="log-month-picker" onchange="renderRecordsUI()" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
                     <button onclick="openCalloutModal()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-100 flex items-center justify-center gap-2 admin-only">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
                         New Log
@@ -551,7 +560,7 @@
                     <div class="flex flex-col h-full">
                         <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Evidence / Proof</label>
                         <div id="view-image-container" class="flex-1 bg-slate-900 rounded-3xl overflow-hidden relative group min-h-[300px] flex items-center justify-center border-4 border-white shadow-xl">
-                            <img id="view-image" src="" class="max-w-full max-h-full object-contain cursor-zoom-in transition-transform duration-300" onclick="viewImage(this.src)">
+                            <img id="view-image" src="" loading="lazy" class="max-w-full max-h-full object-contain cursor-zoom-in transition-transform duration-300" onclick="viewImage(this.src)">
                             <div id="view-no-image" class="text-slate-500 font-bold text-xs">No Image Provided</div>
                         </div>
                     </div>
@@ -638,7 +647,7 @@
             </div>
             <div class="dropdown-content">
                 <div class="p-2 sticky top-0 bg-white border-b border-slate-50">
-                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 dropdown-search">
+                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-50 dropdown-search">
                 </div>
                 <div class="items-list pb-1"></div>
             </div>
@@ -762,6 +771,30 @@
 
     <!-- 3. MAIN SCRIPT (Uses window variables directly) -->
     <script>
+        // --- PERFORMANCE / RENDER UI LOGIC ---
+        let renderRecordsTimeout = null;
+        window.renderRecordsUI = function() {
+            if(renderRecordsTimeout) clearTimeout(renderRecordsTimeout);
+            renderRecordsTimeout = setTimeout(() => {
+                if(window.renderDashboard) window.renderDashboard();
+                if(window.renderLogTabs) window.renderLogTabs();
+                if(window.renderLogs) window.renderLogs();
+            }, 50); // Debounce
+        };
+
+        window.renderConfigUI = function() {
+            if(window.initSearchSelects) window.initSearchSelects();
+            if(window.renderSettings) window.renderSettings();
+            if(window.populateSelects) window.populateSelects();
+            if(window.populateBrandChecklist) window.populateBrandChecklist();
+            if(window.populateBrandFilter) window.populateBrandFilter();
+        };
+
+        window.renderAll = function() {
+            window.renderConfigUI();
+            window.renderRecordsUI();
+        };
+
         // --- LOGIN LOGIC ---
         let selectedRole = 'operator';
 
@@ -784,7 +817,7 @@
             }
         })();
 
-        function selectRole(role) {
+        window.selectRole = function(role) {
             selectedRole = role;
             const btnOp = document.getElementById('btn-role-operator');
             const btnAd = document.getElementById('btn-role-admin');
@@ -802,9 +835,9 @@
                 passField.classList.remove('hidden');
                 passInput.focus();
             }
-        }
+        };
 
-        function attemptLogin() {
+        window.attemptLogin = function() {
             if (selectedRole === 'operator') {
                 completeLogin('operator');
             } else {
@@ -819,7 +852,7 @@
                     setTimeout(() => passInput.classList.remove('ring-2', 'ring-red-500'), 500);
                 }
             }
-        }
+        };
 
         window.logout = function() {
             localStorage.removeItem('callout_user_role'); // Clear saved session
@@ -856,7 +889,7 @@
         }
 
         // --- 2. MODAL & SEARCH LOGIC ---
-        function toggleModal(id, show) {
+        window.toggleModal = function(id, show) {
             const el = document.getElementById(id);
             if(!el) return;
             const container = el.querySelector('.modal-container');
@@ -879,11 +912,9 @@
                     el.classList.add('hidden');
                 }, 300);
             }
-        }
-        
-        window.toggleModal = toggleModal; // EXPLICITLY ATTACH TO WINDOW
+        };
 
-        const AppModal = {
+        window.AppModal = {
             resolve: null,
             show(title, message, type = 'confirm') {
                 return new Promise((res) => {
@@ -1057,12 +1088,9 @@
             try {
                 if(window.config.los) window.config.los.forEach(lo => { if(!lo.brands) lo.brands = []; });
                 initSearchSelects();
-                renderAll();
-                showSection('dashboard');
+                window.renderAll();
+                window.showSection('dashboard');
                 window.isInitialized = true;
-                
-                // Extra init calls
-                populateBrandChecklist();
             } catch (e) { console.error("Init Error:", e); }
         };
 
@@ -1073,7 +1101,7 @@
         }
 
         // --- Business Logic ---
-        function initSearchSelects() {
+        window.initSearchSelects = function() {
             if(!window.config) return;
             
             const brandOpts = (window.config.brands || []).sort().map(b => ({ label: b }));
@@ -1145,7 +1173,7 @@
             }
         }
 
-        function migrateReporterNames() {
+        window.migrateReporterNames = function() {
             if (!window.records || window.records.length === 0) return;
             
             let updates = 0;
@@ -1174,7 +1202,7 @@
             if (updates > 0) {
                 console.log(`Migrated ${updates} reporter names.`);
                 // Refresh UI to show new names immediately
-                if(window.renderAll) window.renderAll();
+                if(window.renderRecordsUI) window.renderRecordsUI();
             }
         }
 
@@ -1305,6 +1333,49 @@
             toggleModal('view-record-modal', true);
         };
 
+        // NEW: Operator History
+        window.openOperatorHistory = function(name) {
+            let histHtml = '';
+            const opRecords = window.records.filter(r => {
+                // If r.lo is array, check if it includes name
+                if(Array.isArray(r.lo)) return r.lo.includes(name);
+                return r.lo === name;
+            });
+            
+            // Sort
+            opRecords.sort((a,b) => new Date(b.datetime) - new Date(a.datetime));
+
+            document.getElementById('op-history-title').innerText = name;
+            const list = document.getElementById('op-history-list');
+            
+            if(opRecords.length === 0) {
+                histHtml = `<tr><td colspan="5" class="px-6 py-8 text-center text-xs text-slate-400 italic">No records found for this operator.</td></tr>`;
+            } else {
+                opRecords.forEach(r => {
+                    const originalIdx = window.records.findIndex(rec => rec.id === r.id);
+                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
+                    
+                    let statusBadge = '<span class="bg-green-100 text-green-600 px-2 py-1 rounded text-[10px] font-bold">VALID</span>';
+                    if (r.isDisputed) statusBadge = '<span class="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-bold">VOID</span>';
+                    else if (r.disputeStatus === 'pending') statusBadge = '<span class="bg-orange-100 text-orange-600 px-2 py-1 rounded text-[10px] font-bold">PENDING</span>';
+
+                    histHtml += `
+                        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 cursor-pointer" onclick="toggleModal('operator-history-modal', false); setTimeout(() => viewRecord(${originalIdx}), 300)">
+                            <td class="px-6 py-4 font-bold text-slate-900 whitespace-nowrap">${date}</td>
+                            <td class="px-6 py-4 font-medium text-slate-600">${r.brand}</td>
+                            <td class="px-6 py-4 text-slate-500 italic truncate max-w-[150px]">${r.reason}</td>
+                            <td class="px-6 py-4 text-center">${statusBadge}</td>
+                            <td class="px-6 py-4 text-right">
+                                <button class="text-blue-600 hover:text-blue-800 text-[10px] font-bold uppercase">View</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+            }
+            list.innerHTML = histHtml;
+            toggleModal('operator-history-modal', true);
+        }
+
         // NEW: Dispute Functions
         window.openDisputeForm = function() {
             document.getElementById('dispute-input-container').classList.remove('hidden');
@@ -1370,10 +1441,10 @@
             
             // Immediate reflection
             window.viewRecord(index); 
-            if(window.renderAll) window.renderAll();
+            if(window.renderRecordsUI) window.renderRecordsUI();
         };
 
-        function openCalloutModal(editIdx = -1, forceEdit = false) {
+        window.openCalloutModal = function(editIdx = -1, forceEdit = false) {
             try {
                 if (!window.isInitialized || !customSelects.brand) { initSearchSelects(); window.isInitialized = true; }
                 const form = document.getElementById('callout-form');
@@ -1494,10 +1565,6 @@
                 timestamp: isEdit ? window.records[editIdx].timestamp : Date.now()
             };
 
-            // If admin manually toggles dispute in edit form, ensure we reset or set disputeStatus accordingly if needed, 
-            // but usually manual override is stronger. We'll leave disputeStatus as is unless we want manual uncheck to clear it.
-            // For now, let's keep it simple.
-
             try {
                 if (isEdit && window.updateFirebaseRecord && form.dataset.recordId) await window.updateFirebaseRecord(form.dataset.recordId, recordData);
                 else if (window.addFirebaseRecord) await window.addFirebaseRecord(recordData);
@@ -1510,68 +1577,7 @@
             }
         };
 
-        function renderAll() {
-            renderDashboard();
-            renderLogTabs();
-            renderLogs();
-            renderSettings();
-            initSearchSelects(); // Ensure dropdowns have latest data
-            populateSelects();
-        }
-
-        // NEW: Operator History
-        window.openOperatorHistory = function(name) {
-            const opRecords = window.records.filter(r => {
-                // If r.lo is array, check if it includes name
-                if(Array.isArray(r.lo)) return r.lo.includes(name);
-                return r.lo === name;
-            });
-            
-            // Sort
-            opRecords.sort((a,b) => new Date(b.datetime) - new Date(a.datetime));
-
-            document.getElementById('op-history-title').innerText = name;
-            const list = document.getElementById('op-history-list');
-            list.innerHTML = '';
-            
-            if(opRecords.length === 0) {
-                list.innerHTML = `<tr><td colspan="5" class="px-6 py-8 text-center text-xs text-slate-400 italic">No records found for this operator.</td></tr>`;
-            } else {
-                opRecords.forEach(r => {
-                    const originalIdx = window.records.findIndex(rec => rec.id === r.id);
-                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
-                    
-                    let statusBadge = '<span class="bg-green-100 text-green-600 px-2 py-1 rounded text-[10px] font-bold">VALID</span>';
-                    if (r.isDisputed) statusBadge = '<span class="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-bold">VOID</span>';
-                    else if (r.disputeStatus === 'pending') statusBadge = '<span class="bg-orange-100 text-orange-600 px-2 py-1 rounded text-[10px] font-bold">PENDING</span>';
-
-                    list.innerHTML += `
-                        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 cursor-pointer" onclick="toggleModal('operator-history-modal', false); setTimeout(() => viewRecord(${originalIdx}), 300)">
-                            <td class="px-6 py-4 font-bold text-slate-900 whitespace-nowrap">${date}</td>
-                            <td class="px-6 py-4 font-medium text-slate-600">${r.brand}</td>
-                            <td class="px-6 py-4 text-slate-500 italic truncate max-w-[150px]">${r.reason}</td>
-                            <td class="px-6 py-4 text-center">${statusBadge}</td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-blue-600 hover:text-blue-800 text-[10px] font-bold uppercase">View</button>
-                            </td>
-                        </tr>
-                    `;
-                });
-            }
-            
-            toggleModal('operator-history-modal', true);
-        }
-
-        function populateSelects() {
-            if(!window.config.lols) return;
-            const sortedLeads = [...window.config.lols].sort();
-            const newLoLead = document.getElementById('new-lo-lead');
-            if(newLoLead) newLoLead.innerHTML = '<option value="">Select Team Lead</option>' + sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
-            const editOpLead = document.getElementById('edit-op-lead');
-            if(editOpLead) editOpLead.innerHTML = sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
-        }
-
-        function renderDashboard() {
+        window.renderDashboard = function() {
             const filterType = document.getElementById('dashboard-filter') ? document.getElementById('dashboard-filter').value : 'overall';
             const monthPickerValue = document.getElementById('dashboard-month-picker') ? document.getElementById('dashboard-month-picker').value : '';
             const now = new Date();
@@ -1626,21 +1632,19 @@
                          if(opName) operatorCounts[opName] = (operatorCounts[opName] || 0) + 1;
                     });
                 });
-                // Remove Limit! Use all valid records
+                
                 const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a);
                 
-                coachingContainer.innerHTML = '';
+                let coachHtml = '';
                 if(sortedOperators.length === 0) {
-                    coachingContainer.innerHTML = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded</div>`;
+                    coachHtml = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded</div>`;
                 } else {
                     const maxCount = sortedOperators[0][1];
                     sortedOperators.forEach(([name, count], index) => {
                         const percentage = (count / maxCount) * 100;
-                        // Keep colorful top 3, standard blue for others
                         const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : (index === 2 ? 'bg-blue-400' : 'bg-slate-400'));
                         
-                        // Added ONCLICK for pop-up history
-                        coachingContainer.innerHTML += `
+                        coachHtml += `
                         <div onclick="openOperatorHistory('${name}')" class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-blue-50/50 transition-all group">
                             <div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm group-hover:text-blue-600 transition-colors">${index + 1}</div>
                             <div class="flex-1">
@@ -1655,22 +1659,20 @@
                         </div>`;
                     });
                 }
+                coachingContainer.innerHTML = coachHtml;
             }
 
-            // Recent Table (Shows ALL records, even disputed, but visually marked)
+            // Recent Table
             const recentBody = document.getElementById('recent-table-body');
-            recentBody.innerHTML = '';
-            // Use allDateFilteredRecords (includes disputed) or window.records for truly recent irrespective of filter
-            // Usually "Recent" means recent global activity, so let's use window.records
             const recentToShow = window.records.slice().sort((a, b) => new Date(b.datetime) - new Date(a.datetime)).slice(0, 8);
             
+            let recentHtml = '';
             if(recentToShow.length === 0) {
-                recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found</td></tr>`;
+                recentHtml = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found</td></tr>`;
             } else {
                 recentToShow.forEach(r => {
                     const originalIdx = window.records.findIndex(rec => rec.id === r.id); 
                     const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
-                    // Format LO/LOL array for display
                     const displayLo = Array.isArray(r.lo) ? r.lo.join(', ') : r.lo;
                     const displayLol = Array.isArray(r.lol) ? r.lol.join(', ') : r.lol;
                     
@@ -1678,19 +1680,19 @@
                     const strikeClass = r.isDisputed ? 'line-through text-red-300' : 'text-slate-900';
                     const textClass = r.isDisputed ? 'text-red-300' : 'text-slate-600';
                     
-                    recentBody.innerHTML += `<tr class="clickable-row ${rowClass}" onclick="viewRecord(${originalIdx})"><td class="px-8 py-5 font-bold ${strikeClass} whitespace-nowrap">${date} ${r.isDisputed ? '<span class="ml-2 bg-red-100 text-red-500 text-[8px] px-1.5 py-0.5 rounded no-underline inline-block">VOID</span>' : ''}</td><td class="px-8 py-5 font-medium ${textClass}">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px] ${r.isDisputed ? 'opacity-50' : ''}">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
+                    recentHtml += `<tr class="clickable-row ${rowClass}" onclick="viewRecord(${originalIdx})"><td class="px-8 py-5 font-bold ${strikeClass} whitespace-nowrap">${date} ${r.isDisputed ? '<span class="ml-2 bg-red-100 text-red-500 text-[8px] px-1.5 py-0.5 rounded no-underline inline-block">VOID</span>' : ''}</td><td class="px-8 py-5 font-medium ${textClass}">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px] ${r.isDisputed ? 'opacity-50' : ''}">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
                 });
             }
-        }
+            recentBody.innerHTML = recentHtml;
+        };
 
-        function renderLogTabs() {
+        window.renderLogTabs = function() {
             const container = document.getElementById('lol-filter-container');
             const lols = ['All', ...[...window.config.lols].sort()];
-            container.innerHTML = '';
             
-            // Re-apply Date Filter Logic for accurate counts
             const dateFilterType = document.getElementById('log-date-filter')?.value || 'overall';
             const dateFilterValue = document.getElementById('log-month-picker')?.value;
+            const brandFilterValue = document.getElementById('log-brand-filter')?.value || 'All';
             
             let recordsToCount = window.records;
             if (dateFilterType === 'current_month') {
@@ -1711,9 +1713,15 @@
                 });
             }
 
+            // Apply Brand Filter
+            if (brandFilterValue !== 'All') {
+                recordsToCount = recordsToCount.filter(r => r.brand === brandFilterValue);
+            }
+
             // Exclude disputed from Tab Counts as well? Usually better to just count them as 'records' but filtering in dashboard.
             // Let's keep them in the count but maybe show valid count. For simplicity, just count existing records in the list.
 
+            let tabsHtml = '';
             lols.forEach(lol => {
                 const count = lol === 'All' ? recordsToCount.length : recordsToCount.filter(r => {
                      // Check if r.lol (string or array) includes this lead
@@ -1721,19 +1729,19 @@
                      return r.lol === lol;
                 }).length;
                 const isActive = window.currentLogFilter === lol;
-                container.innerHTML += `<button onclick="setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span></button>`;
+                tabsHtml += `<button onclick="window.setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span></button>`;
             });
-        }
+            container.innerHTML = tabsHtml;
+        };
 
-        function setLogFilter(lol) { window.currentLogFilter = lol; renderLogTabs(); renderLogs(); }
+        window.setLogFilter = function(lol) { window.currentLogFilter = lol; window.renderLogTabs(); window.renderLogs(); };
 
-        function renderLogs() {
+        window.renderLogs = function() {
             const body = document.getElementById('full-log-body');
-            body.innerHTML = '';
             
-            // 1. Date Filtering
             const dateFilterType = document.getElementById('log-date-filter')?.value || 'overall';
             const dateFilterValue = document.getElementById('log-month-picker')?.value;
+            const brandFilterValue = document.getElementById('log-brand-filter')?.value || 'All';
 
             let recordsToRender = window.records;
 
@@ -1755,7 +1763,11 @@
                 });
             }
 
-            // 2. LOL Filtering
+            // Apply Brand Filter
+            if (brandFilterValue !== 'All') {
+                recordsToRender = recordsToRender.filter(r => r.brand === brandFilterValue);
+            }
+
             const filtered = window.currentLogFilter === 'All' 
                 ? recordsToRender 
                 : recordsToRender.filter(r => {
@@ -1763,12 +1775,13 @@
                      return r.lol === window.currentLogFilter;
                 });
 
+            let logsHtml = '';
             if(filtered.length === 0) {
-                body.innerHTML = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`;
+                logsHtml = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`;
+                body.innerHTML = logsHtml;
                 return;
             }
 
-            // 3. Sorting (Latest First)
             filtered.sort((a, b) => new Date(b.datetime) - new Date(a.datetime));
 
             let currentGroup = '';
@@ -1783,7 +1796,7 @@
 
                 if (groupStr !== currentGroup) {
                     currentGroup = groupStr;
-                    body.innerHTML += `
+                    logsHtml += `
                         <tr class="bg-slate-100/80 border-b border-slate-200">
                             <td colspan="5" class="px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest sticky top-0 z-10">
                                 ${currentGroup}
@@ -1792,15 +1805,14 @@
                     `;
                 }
 
-                // Disputed Styling
                 const rowStyle = r.isDisputed ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-white';
                 const opacityStyle = r.isDisputed ? 'opacity-60 grayscale' : '';
                 const disputeBadge = r.isDisputed ? '<div class="mb-1"><span class="bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded">VOIDED</span></div>' : '';
 
-                body.innerHTML += `
+                logsHtml += `
                     <tr class="group transition-colors border-b border-slate-50 last:border-0 ${rowStyle}">
                         <td class="px-6 py-6 ${opacityStyle}">
-                            ${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
+                            ${r.proof ? `<img src="${r.proof}" loading="lazy" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="window.viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
                         </td>
                         <td class="px-6 py-6">
                             ${disputeBadge}
@@ -1818,34 +1830,32 @@
                         </td>
                         <td class="px-6 py-6 text-center">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="viewRecord(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                                <button onclick="window.viewRecord(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                                 </button>
-                                <button onclick="deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all admin-only">
+                                <button onclick="window.deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all admin-only">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
                                 </button>
                             </div>
                         </td>
                     </tr>`;
             });
-        }
+            body.innerHTML = logsHtml;
+        };
 
         // Settings Renderer
-        function renderSettings() {
+        window.renderSettings = function() {
             const renderList = (type, targetId) => {
                 const list = document.getElementById(targetId);
-                list.innerHTML = '';
+                let listHtml = '';
                 [...window.config[type]].sort().forEach(item => {
-                    const li = document.createElement('li');
-                    li.className = "flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all";
-                    li.innerHTML = `<span class="font-bold text-sm text-slate-700">${item}</span>`;
-                    const btn = document.createElement('button');
-                    btn.className = "text-red-300 hover:text-red-600 font-bold px-2 text-xl";
-                    btn.innerHTML = "&times;";
-                    btn.onclick = () => removeItem(type, item);
-                    li.appendChild(btn);
-                    list.appendChild(li);
+                    listHtml += `
+                    <li class="flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all">
+                        <span class="font-bold text-sm text-slate-700">${item}</span>
+                        <button class="text-red-300 hover:text-red-600 font-bold px-2 text-xl" onclick="window.removeItem('${type}', '${item}')">&times;</button>
+                    </li>`;
                 });
+                list.innerHTML = listHtml;
             };
 
             renderList('brands', 'list-brands');
@@ -1856,79 +1866,147 @@
             renderList('qas', 'list-qas');
 
             const ocontainer = document.getElementById('list-los');
-            ocontainer.innerHTML = '';
+            let opsHtml = '';
             [...window.config.lols].sort().forEach(lead => {
                 const leadOperators = [...window.config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
                 if (leadOperators.length > 0) {
-                    let group = document.createElement('div');
-                    group.className = "space-y-4";
-                    group.innerHTML = `<h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
+                    opsHtml += `<div class="space-y-4"><h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
                     leadOperators.forEach(o => {
                         let brandTags = (o.brands || []).map(b => `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">${b}</span>`).join('');
-                        let item = document.createElement('div');
-                        item.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4";
-                        item.innerHTML = `<div class="flex-1"><div class="font-bold text-slate-900">${o.name}</div><div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div></div>`;
-                        let acts = document.createElement('div');
-                        acts.className = "flex items-center gap-3 w-full sm:w-auto";
-                        let editBtn = document.createElement('button');
-                        editBtn.className = "p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold";
-                        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>`;
-                        editBtn.onclick = () => openEditOperatorModal(o.name);
-                        let del = document.createElement('button');
-                        del.className = "p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold";
-                        del.innerHTML = "&times;";
-                        del.onclick = () => removeItem('los', o.name);
-                        acts.appendChild(editBtn); acts.appendChild(del);
-                        item.appendChild(acts); group.querySelector('div').appendChild(item);
+                        opsHtml += `
+                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
+                            <div class="flex-1">
+                                <div class="font-bold text-slate-900">${o.name}</div>
+                                <div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div>
+                            </div>
+                            <div class="flex items-center gap-3 w-full sm:w-auto">
+                                <button class="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold" onclick="window.openEditOperatorModal('${o.name}')">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                </button>
+                                <button class="p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold" onclick="window.removeItem('los', '${o.name}')">&times;</button>
+                            </div>
+                        </div>`;
                     });
-                    ocontainer.appendChild(group);
+                    opsHtml += `</div></div>`;
                 }
             });
-            
-            // Re-populate checklist whenever settings render
-            populateBrandChecklist();
-        }
+            ocontainer.innerHTML = opsHtml;
+        };
 
-        function populateBrandChecklist() {
+        window.populateBrandChecklist = function() {
             const container = document.getElementById('brand-checklist');
             if (!container) return;
-            container.innerHTML = '';
+            let checksHtml = '';
             if (window.config && window.config.brands) {
                 [...window.config.brands].sort().forEach(b => {
-                    const div = document.createElement('div');
-                    div.className = "flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item";
-                    div.innerHTML = `<input type="checkbox" value="${b}"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
-                    div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
-                    container.appendChild(div);
+                    checksHtml += `
+                    <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item" onclick="if(event.target.tagName !== 'INPUT'){const cb=this.querySelector('input'); cb.checked = !cb.checked;}">
+                        <input type="checkbox" value="${b}">
+                        <span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>
+                    </div>`;
                 });
             }
-        }
+            container.innerHTML = checksHtml;
+        };
 
-        window.deleteRecord = async function(index) {
-            const rec = window.records[index];
-            if(!rec) return;
-            const confirmed = await AppModal.show("Delete Record", "Permanently delete this record?", 'confirm');
-            if(confirmed) {
-                if(window.deleteFirebaseRecord && rec.id) {
-                    await window.deleteFirebaseRecord(rec.id);
-                } else {
-                    window.records.splice(index, 1);
-                    saveRecords();
-                    renderAll();
-                }
+        // --- Other Helpers (ToggleModal, AppModal, etc. same as above) ---
+        window.openEditOperatorModal = function(name) {
+            const op = window.config.los.find(o => o.name === name);
+            if(!op) return;
+            document.getElementById('edit-op-original-name').value = op.name;
+            document.getElementById('edit-op-name').value = op.name;
+            const leadSelect = document.getElementById('edit-op-lead');
+            leadSelect.innerHTML = window.config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
+            leadSelect.value = op.lead;
+            const brandsContainer = document.getElementById('edit-op-brands');
+            let bHtml = '';
+            [...window.config.brands].sort().forEach(b => {
+                const isChecked = (op.brands || []).includes(b);
+                bHtml += `
+                <div class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer" onclick="if(event.target.tagName !== 'INPUT'){const cb=this.querySelector('input'); cb.checked = !cb.checked;}">
+                    <input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
+                    <span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>
+                </div>`;
+            });
+            brandsContainer.innerHTML = bHtml;
+            toggleModal('edit-operator-modal', true);
+        };
+
+        window.saveOperatorChanges = async function() {
+            const originalName = document.getElementById('edit-op-original-name').value;
+            const newName = document.getElementById('edit-op-name').value.trim();
+            const newLead = document.getElementById('edit-op-lead').value;
+            const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
+            if (!newName) { if(window.showToast) window.showToast("Name is required"); return; }
+            const idx = window.config.los.findIndex(o => o.name === originalName);
+            if (idx === -1) return;
+            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { if(window.showToast) window.showToast("Name taken"); return; }
+            const confirmed = await AppModal.show("Update Operator", `Save changes?`, 'confirm');
+            if (confirmed) {
+                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                toggleModal('edit-operator-modal', false); if(window.showToast) window.showToast("Operator updated");
             }
         };
 
-        function saveRecords() {
-            localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
-        }
+        window.removeItem = async function(type, id) {
+            const confirmed = await AppModal.show("Delete Item", `Delete "${id}"?`, 'confirm');
+            if(confirmed) {
+                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
+                else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                if(window.showToast) window.showToast("Item deleted");
+            }
+        };
 
-        function viewImage(src) {
+        window.addItem = async function(type, inputId) {
+            const input = document.getElementById(inputId);
+            const val = input.value.trim();
+            if(!val) return;
+            if(window.config[type].includes(val)) { if(window.showToast) window.showToast("Exists already"); return; }
+            
+            // Check for duplicate in personnel roles
+             if(['ams', 'als', 'hosts', 'qas'].includes(type)) {
+                const foundRole = roleCategories.find(cat => window.config[cat.id].includes(val));
+                if (foundRole) {
+                    await AppModal.show("Duplicate Entry", `"${val}" is already registered under ${foundRole.label}.`, 'alert');
+                    return;
+                }
+            }
+
+            const confirmed = await AppModal.show("Add Entry", `Register "${val}"?`, 'confirm');
+            if(confirmed) {
+                window.config[type].push(val);
+                input.value = '';
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                if(window.showToast) window.showToast("Entry registered");
+            }
+        };
+
+        window.addOperatorRelationship = async function() {
+            const name = document.getElementById('new-lo-name').value.trim();
+            const lead = document.getElementById('new-lo-lead').value;
+             const selectedBrands = Array.from(document.querySelectorAll('#brand-checklist input:checked')).map(cb => cb.value);
+
+            if(name && lead) {
+                if(window.config.los.some(o => o.name === name)) { if(window.showToast) window.showToast("Operator exists"); return; }
+                const confirmed = await AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
+                if(confirmed) {
+                    window.config.los.push({ name, lead, brands: selectedBrands });
+                    document.getElementById('new-lo-name').value = '';
+                     document.querySelectorAll('#brand-checklist input').forEach(cb => cb.checked = false);
+                    if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                    if(window.showToast) window.showToast("Operator created");
+                }
+            } else { if(window.showToast) window.showToast("Fill all fields"); }
+        };
+
+        window.viewImage = function(src) {
             const win = window.open("");
             win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
-        }
+        };
         
-        function filterBrandCheckboxes(inputId, containerId) {
+        window.filterBrandCheckboxes = function(inputId, containerId) {
             const input = document.getElementById(inputId);
             const filter = input.value.toLowerCase();
             const container = document.getElementById(containerId);
@@ -1942,9 +2020,9 @@
                     else { item.style.display = "none"; }
                 }
             }
-        }
+        };
         
-        function handleDashboardFilterChange() {
+        window.handleDashboardFilterChange = function() {
             const filterType = document.getElementById('dashboard-filter').value;
             const monthPicker = document.getElementById('dashboard-month-picker');
             if (filterType === 'specific_month') {
@@ -1954,18 +2032,18 @@
                     monthPicker.value = `${now.getFullYear()}-${(now.getMonth() + 1).toString().padStart(2, '0')}`;
                 }
             } else { monthPicker.classList.add('hidden'); }
-            renderDashboard();
-        }
+            window.renderDashboard();
+        };
         
-        function switchSettingsTab(tab) {
+        window.switchSettingsTab = function(tab) {
             document.querySelectorAll('.setting-tab').forEach(t => { t.classList.remove('bg-blue-50', 'text-blue-600'); t.classList.add('text-slate-500'); });
             const act = document.getElementById(`tab-${tab}`);
             if(act) { act.classList.remove('text-slate-500'); act.classList.add('bg-blue-50', 'text-blue-600'); }
             document.querySelectorAll('.setting-panel').forEach(p => p.classList.add('hidden'));
             document.getElementById(`set-${tab}`).classList.remove('hidden');
-        }
+        };
         
-        function showSection(id) {
+        window.showSection = function(id) {
             document.querySelectorAll('section').forEach(s => s.classList.add('hidden'));
             document.getElementById(id).classList.remove('hidden');
             document.querySelectorAll('.nav-link').forEach(btn => btn.classList.remove('active-tab'));
@@ -1975,9 +2053,51 @@
             document.querySelectorAll('.mobile-nav-btn').forEach(btn => btn.classList.remove('mobile-active'));
             const mob = document.getElementById(`mob-${id}`);
             if(mob) mob.classList.add('mobile-active');
-            if(id === 'record-log') { renderLogTabs(); renderLogs(); }
-            if(id === 'dashboard') { renderDashboard(); }
-        }
+            if(id === 'record-log') { window.renderLogTabs(); window.renderLogs(); }
+            if(id === 'dashboard') { window.renderDashboard(); }
+        };
+
+        window.handleLogDateFilterChange = function() {
+            const filterType = document.getElementById('log-date-filter').value;
+            const monthPicker = document.getElementById('log-month-picker');
+            
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    monthPicker.value = `${now.getFullYear()}-${month}`;
+                }
+            } else {
+                monthPicker.classList.add('hidden');
+            }
+            window.renderLogs();
+            window.renderLogTabs();
+        };
+
+        window.handleLogBrandFilterChange = function() {
+            window.renderLogs();
+            window.renderLogTabs();
+        };
+
+        window.populateBrandFilter = function() {
+            const filterEl = document.getElementById('log-brand-filter');
+            if (!filterEl) return;
+            const currentVal = filterEl.value;
+            let options = '<option value="All">All Brands</option>';
+            if (window.config && window.config.brands) {
+                [...window.config.brands].sort().forEach(b => {
+                    options += `<option value="${b}">${b}</option>`;
+                });
+            }
+            filterEl.innerHTML = options;
+            // Retain selection if valid
+            if (window.config.brands && window.config.brands.includes(currentVal)) {
+                filterEl.value = currentVal;
+            } else {
+                filterEl.value = "All";
+            }
+        };
 
     </script>
 </body>
