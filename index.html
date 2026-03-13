@@ -8,8 +8,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.3.0/exceljs.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/FileSaver.js/2.0.5/FileSaver.min.js"></script>
     
-    <!-- 1. INITIALIZE GLOBAL STATE -->
+    <!-- 1. GLOBAL UTILITIES & STATE (Loaded First) -->
     <script>
+        // Global State
         window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
             brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
@@ -17,25 +18,141 @@
         window.isInitialized = false;
         window.currentLogFilter = 'All';
 
-        // FIX: Add Toast Notification Function
-        window.showToast = function(message) {
-            let toast = document.getElementById('toast-notification');
-            if (!toast) {
-                toast = document.createElement('div');
-                toast.id = 'toast-notification';
-                toast.className = 'fixed bottom-5 right-5 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl z-[150] transform transition-all duration-300 translate-y-20 opacity-0 font-bold text-sm flex items-center gap-3';
-                document.body.appendChild(toast);
-            }
-            toast.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg> <span>${message}</span>`;
-            
-            requestAnimationFrame(() => {
-                toast.classList.remove('translate-y-20', 'opacity-0');
-            });
+        // Constants shared across scripts
+        window.roleCategories = [
+            { id: 'ams', label: 'Account Manager' },
+            { id: 'als', label: 'Account Lead' },
+            { id: 'hosts', label: 'Live Host' },
+            { id: 'qas', label: 'Quality Assurance' }
+        ];
 
-            if(window.toastTimeout) clearTimeout(window.toastTimeout);
-            window.toastTimeout = setTimeout(() => {
-                toast.classList.add('translate-y-20', 'opacity-0');
-            }, 3000);
+        window.customSelects = {
+            brand: null,
+            reporter: null,
+            lol: null,
+            lo: null
+        };
+
+        // --- UI UTILITIES ---
+        
+        window.showToast = function(msg) {
+            const toast = document.getElementById('toast');
+            if(toast) {
+                toast.innerText = msg;
+                toast.classList.remove('translate-y-32');
+                setTimeout(() => toast.classList.add('translate-y-32'), 3000);
+            } else {
+                console.log("Toast:", msg);
+            }
+        };
+
+        window.toggleModal = function(id, show) {
+            const el = document.getElementById(id);
+            if(!el) return;
+            const container = el.querySelector('.modal-container');
+            
+            if (show) {
+                el.classList.remove('hidden');
+                requestAnimationFrame(() => {
+                    el.classList.remove('opacity-0');
+                    if(container) container.classList.remove('scale-90', 'opacity-0');
+                });
+            } else {
+                el.classList.add('opacity-0');
+                if(container) container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => el.classList.add('hidden'), 300);
+            }
+        };
+
+        window.viewImage = function(src) {
+            const win = window.open("");
+            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
+        };
+
+        window.AppModal = {
+            resolve: null,
+            show(title, message, type = 'confirm') {
+                return new Promise((res) => {
+                    this.resolve = res;
+                    const overlay = document.getElementById('app-modal');
+                    if (!overlay) {
+                        // Fallback if modal DOM isn't ready
+                        if(type === 'confirm') return res(confirm(message));
+                        else return res(alert(message));
+                    }
+
+                    const container = overlay.querySelector('.modal-container');
+                    const actions = document.getElementById('app-modal-actions');
+                    const iconCont = document.getElementById('app-modal-icon');
+                    
+                    document.getElementById('app-modal-title').innerText = title;
+                    document.getElementById('app-modal-message').innerText = message;
+                    
+                    let iconColor = type === 'alert' ? 'text-red-600' : (type === 'confirm' ? 'text-blue-600' : 'text-green-600');
+                    let iconBg = type === 'alert' ? 'bg-red-50' : (type === 'confirm' ? 'bg-blue-50' : 'bg-green-50');
+                    let btnColor = type === 'alert' ? 'bg-red-600' : (type === 'confirm' ? 'bg-blue-600' : 'bg-slate-900');
+
+                    iconCont.innerHTML = `
+                        <div class="p-4 ${iconBg} ${iconColor} rounded-full">
+                            <svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                ${type === 'alert' 
+                                    ? '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />' 
+                                    : '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />'}
+                            </svg>
+                        </div>`;
+
+                    if (type === 'confirm') {
+                        actions.innerHTML = `
+                            <button onclick="window.AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button>
+                            <button onclick="window.AppModal.handle(true)" class="flex-1 py-3 ${btnColor} text-white rounded-xl font-bold">Proceed</button>
+                        `;
+                    } else {
+                        actions.innerHTML = `
+                            <button onclick="window.AppModal.handle(true)" class="flex-1 py-3 ${btnColor} text-white rounded-xl font-bold">Okay</button>
+                        `;
+                    }
+
+                    overlay.classList.remove('hidden');
+                    requestAnimationFrame(() => {
+                        overlay.classList.remove('opacity-0');
+                        container.classList.remove('scale-90', 'opacity-0');
+                    });
+                });
+            },
+            handle(value) {
+                const overlay = document.getElementById('app-modal');
+                const container = overlay.querySelector('.modal-container');
+                overlay.classList.add('opacity-0');
+                container.classList.add('scale-90', 'opacity-0');
+                setTimeout(() => {
+                    overlay.classList.add('hidden');
+                    this.resolve(value);
+                }, 300);
+            }
+        };
+
+        window.migrateReporterNames = function() {
+            if (!window.records || window.records.length === 0) return;
+            
+            let updates = 0;
+            window.records.forEach(r => {
+                if (r.who && !r.who.startsWith('[')) {
+                    for (const cat of window.roleCategories) {
+                        if (window.config[cat.id] && window.config[cat.id].includes(r.who)) {
+                            const newWho = `[${cat.label}] ${r.who}`;
+                            if (r.who !== newWho) {
+                                r.who = newWho;
+                                updates++;
+                                if (r.id && window.updateFirebaseRecord) {
+                                    window.updateFirebaseRecord(r.id, { who: newWho }, true);
+                                }
+                            }
+                            break; 
+                        }
+                    }
+                }
+            });
+            if (updates > 0 && window.renderAll) window.renderAll();
         };
     </script>
 
@@ -105,8 +222,8 @@
                     setDoc(settingsRef, defaultConfig, { merge: true });
                     window.config = defaultConfig;
                 }
-                // PERFORMANCE FIX: Only render config-related parts
-                window.renderConfigUI();
+                if(window.initSearchSelects) window.initSearchSelects(); 
+                if(window.renderSettings) window.renderSettings();
                 if(window.migrateReporterNames) window.migrateReporterNames();
             }, (error) => console.error("Settings Sync Error:", error));
 
@@ -117,37 +234,33 @@
                 window.records = loadedRecords;
                 localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
                 window.isInitialized = true;
-                if(window.migrateReporterNames) window.migrateReporterNames();
                 
-                // PERFORMANCE FIX: Only re-render records/tables
-                window.renderRecordsUI(); 
+                if(window.migrateReporterNames) window.migrateReporterNames();
+                if(window.renderAll) window.renderAll(); 
             }, (error) => console.error("Records Sync Error:", error));
         }
 
         window.saveFirebaseConfig = async function(newConfig) {
             try { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'global'), newConfig); } 
-            catch(e) { console.error(e); if(window.showToast) window.showToast("Sync Failed"); }
+            catch(e) { console.error(e); window.showToast("Sync Failed"); }
         };
 
         window.addFirebaseRecord = async function(recordData) {
-            try { 
-                await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'records'), recordData); 
-                if(window.showToast) window.showToast("Synced to Cloud"); 
-            } 
-            catch(e) { console.error(e); if(window.showToast) window.showToast("Save Failed"); }
+            try { await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'records'), recordData); window.showToast("Synced to Cloud"); } 
+            catch(e) { console.error(e); window.showToast("Save Failed"); }
         };
 
         window.updateFirebaseRecord = async function(id, recordData, silent = false) {
             try { 
                 await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id), recordData); 
-                if(!silent && window.showToast) window.showToast("Update Synced"); 
+                if(!silent) window.showToast("Update Synced"); 
             } 
-            catch(e) { console.error(e); if(!silent && window.showToast) window.showToast("Update Failed"); }
+            catch(e) { console.error(e); if(!silent) window.showToast("Update Failed"); }
         };
 
         window.deleteFirebaseRecord = async function(id) {
-            try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id)); if(window.showToast) window.showToast("Deleted from Cloud"); } 
-            catch(e) { console.error(e); if(window.showToast) window.showToast("Delete Failed"); }
+            try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', id)); window.showToast("Deleted from Cloud"); } 
+            catch(e) { console.error(e); window.showToast("Delete Failed"); }
         };
     </script>
 
@@ -157,24 +270,26 @@
         .active-tab { border-bottom: 3px solid #2563eb; color: #2563eb; font-weight: 700; }
         .no-scrollbar::-webkit-scrollbar { display: none; }
         .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
-        .dropdown-content { display: none; position: absolute; background-color: white; min-width: 100%; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1); z-index: 100; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 4px; max-height: 200px; overflow-y: auto; }
+        
+        /* Dropdowns need higher z-index to appear over modal scrollbars */
+        .dropdown-content { display: none; position: absolute; background-color: white; min-width: 100%; box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.1); z-index: 1050; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 4px; max-height: 200px; overflow-y: auto; }
         .dropdown-content.show { display: block; }
         .dropdown-item { padding: 10px 16px; cursor: pointer; font-size: 14px; transition: background 0.2s; }
         .dropdown-item:hover { background-color: #f1f5f9; }
-        tr.clickable-row { transition: background-color 0.2s ease; }
-        tr.clickable-row:hover { background-color: #f8fafc; cursor: pointer; }
+        
+        tr.clickable-row { transition: all 0.2s ease; }
+        tr.clickable-row:hover { background-color: #f8fafc; cursor: pointer; transform: scale(1.002); }
         .modal-overlay { transition: opacity 0.3s ease; }
         .modal-container { transition: transform 0.3s ease, opacity 0.3s ease; }
         .mobile-active { color: #2563eb !important; }
         .safe-area-pb { padding-bottom: calc(12px + env(safe-area-inset-bottom)); }
+        
+        /* Checkbox style for multiselect */
         .checkbox-item { display: flex; align-items: center; gap: 8px; }
         .checkbox-item input { width: 16px; height: 16px; accent-color: #2563eb; cursor: pointer; }
-        
-        /* ROLE BASED VISIBILITY */
-        body.role-operator .admin-only { display: none !important; }
     </style>
 </head>
-<body class="bg-[#f8fafc] text-slate-800 min-h-screen pb-24 lg:pb-0">
+<body class="bg-[#f8fafc] text-slate-800 min-h-screen pb-28 lg:pb-0">
 
     <!-- Navigation -->
     <nav class="bg-white/80 backdrop-blur-md shadow-sm sticky top-0 z-50 border-b border-slate-100">
@@ -196,32 +311,27 @@
                 <div class="hidden lg:flex space-x-10">
                     <button onclick="window.showSection('dashboard')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Dashboard</button>
                     <button onclick="window.showSection('record-log')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Record Log</button>
-                    <button onclick="window.showSection('settings')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all admin-only">Settings</button>
+                    <button onclick="window.showSection('settings')" class="nav-link py-7 px-1 text-sm font-semibold text-slate-500 hover:text-blue-600 transition-all">Settings</button>
                 </div>
-                <div class="flex items-center gap-2">
-                    <button onclick="window.exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl shadow-green-200">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                        <span class="hidden sm:inline">Export</span>
-                    </button>
-                    <button onclick="window.logout()" class="p-2.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-xl transition-all" title="Logout">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
-                    </button>
-                </div>
+                <button onclick="window.exportToExcel()" class="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-3 sm:px-5 py-2.5 rounded-xl text-sm font-bold transition-all shadow-xl shadow-green-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    <span class="hidden sm:inline">Export w/ Images</span>
+                </button>
             </div>
         </div>
     </nav>
 
-    <!-- Mobile Bottom Nav -->
+    <!-- Mobile Bottom Nav (Z-999 to stay below Modals which are Z-1000+) -->
     <div class="lg:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around pt-3 z-[999] shadow-[0_-4px_20px_rgba(0,0,0,0.1)] safe-area-pb">
         <button id="mob-dashboard" onclick="window.showSection('dashboard')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 mobile-active hover:bg-slate-50 transition-colors">
-            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6z" /></svg>
             Dashboard
         </button>
         <button id="mob-record-log" onclick="window.showSection('record-log')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" /></svg>
             Log
         </button>
-        <button id="mob-settings" onclick="window.showSection('settings')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors admin-only">
+        <button id="mob-settings" onclick="window.showSection('settings')" class="mobile-nav-btn flex flex-col items-center justify-center w-full py-1 text-[10px] font-bold text-slate-400 hover:bg-slate-50 transition-colors">
             <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
             Settings
         </button>
@@ -234,7 +344,7 @@
             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                     <h1 class="text-3xl font-extrabold text-slate-900">Operations Analytics</h1>
-                    <p class="text-slate-500 mt-1">Real-time overview. Click any record to view details.</p>
+                    <p class="text-slate-500 mt-1">Real-time overview. Click any record to view or edit details.</p>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
                     <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
@@ -268,7 +378,7 @@
                 </div>
             </div>
 
-            <!-- Coaching Priority Widget -->
+            <!-- Coaching Priority Widget (Moved Top) -->
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                 <div class="px-8 py-6 border-b border-slate-50 bg-red-50/30 flex justify-between items-center">
                     <div class="flex items-center gap-3">
@@ -282,12 +392,12 @@
                     </div>
                     <span id="coaching-period-label" class="text-[10px] font-bold text-slate-400 bg-white px-2 py-1 rounded border border-slate-100">Overall</span>
                 </div>
-                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+                <div id="coaching-list" class="p-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     <!-- Coaching items injected here -->
                 </div>
             </div>
 
-            <!-- Recent Operational Activity -->
+            <!-- Recent Operational Activity (Moved Bottom) -->
             <div class="bg-white rounded-[2rem] shadow-sm border border-slate-100 overflow-hidden flex flex-col">
                 <div class="px-8 py-6 border-b border-slate-50">
                     <h2 class="font-extrabold text-slate-900">Recent Operational Activity</h2>
@@ -316,23 +426,16 @@
                     <h1 class="text-3xl font-extrabold text-slate-900">History Log</h1>
                 </div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <!-- NEW: Brand Filter -->
                     <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
-                        <label for="log-brand-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Brand:</label>
-                        <select id="log-brand-filter" onchange="window.handleLogBrandFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer max-w-[130px] truncate">
-                            <option value="All">All Brands</option>
-                        </select>
-                    </div>
-                    <div class="flex items-center gap-2 bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm">
-                        <label for="log-date-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Date:</label>
+                        <label for="log-date-filter" class="text-xs font-bold text-slate-400 uppercase tracking-wider">Filter:</label>
                         <select id="log-date-filter" onchange="window.handleLogDateFilterChange()" class="bg-transparent text-sm font-bold text-blue-600 outline-none cursor-pointer">
                             <option value="overall">All Time</option>
                             <option value="current_month">Current Month</option>
                             <option value="specific_month">Select Month</option>
                         </select>
                     </div>
-                    <input type="month" id="log-month-picker" onchange="window.renderRecordsUI()" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
-                    <button onclick="window.openCalloutModal()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-100 flex items-center justify-center gap-2 admin-only">
+                    <input type="month" id="log-month-picker" onchange="window.renderLogs(); window.renderLogTabs();" class="hidden bg-white px-4 py-2 rounded-xl border border-slate-100 shadow-sm text-sm font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+                    <button onclick="window.openCalloutModal()" class="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-2xl font-bold shadow-xl shadow-blue-100 flex items-center justify-center gap-2">
                         <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" /></svg>
                         New Log
                     </button>
@@ -361,7 +464,6 @@
 
         <!-- SECTION: SETTINGS -->
         <section id="settings" class="hidden space-y-10">
-            <!-- (Settings content remains unchanged for brevity, but is preserved in logic) -->
             <h1 class="text-3xl font-extrabold text-slate-900">Global Settings</h1>
             
             <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -406,13 +508,6 @@
                             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                 <input type="text" id="new-lo-name" placeholder="Operator Name" class="bg-white border-0 rounded-xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-blue-500 shadow-sm">
                                 <select id="new-lo-lead" class="bg-white border-0 rounded-xl px-4 py-3.5 text-sm focus:ring-2 focus:ring-blue-500 shadow-sm"></select>
-                            </div>
-                            <!-- Brand Checklist for New Operator -->
-                            <div class="bg-white p-3 rounded-xl border border-slate-100">
-                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Assign Brands (Optional)</label>
-                                <div id="brand-checklist" class="grid grid-cols-2 gap-2 max-h-32 overflow-y-auto">
-                                    <!-- Checkboxes injected by JS -->
-                                </div>
                             </div>
                             <button onclick="window.addOperatorRelationship()" id="btn-save-operator" class="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100">Create Operator</button>
                         </div>
@@ -494,112 +589,16 @@
         </section>
     </main>
 
-    <!-- NEW: View Record Modal -->
-    <div id="view-record-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md hidden z-[60] flex items-center justify-center p-4 modal-overlay opacity-0">
-        <div class="bg-white rounded-[2.5rem] w-full max-w-4xl overflow-hidden shadow-2xl modal-container opacity-0 scale-90 flex flex-col max-h-[90vh]">
-            <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                <div class="flex items-center gap-3">
-                     <div class="p-2 bg-blue-100 text-blue-600 rounded-xl">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
-                     </div>
-                    <div>
-                        <h2 class="text-xl font-black text-slate-900 tracking-tight">Incident Details</h2>
-                        <p id="view-id-display" class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">REF-ID</p>
-                    </div>
-                </div>
-                <button onclick="window.toggleModal('view-record-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
-            </div>
-            
-            <div class="flex-1 overflow-y-auto p-8">
-                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                    <!-- Left Column: Details -->
-                    <div class="space-y-6">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Timestamp</label>
-                                <div id="view-date" class="text-sm font-bold text-slate-800"></div>
-                            </div>
-                            <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                                <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Brand</label>
-                                <div id="view-brand" class="text-sm font-bold text-slate-800"></div>
-                            </div>
-                        </div>
-
-                        <div class="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                             <label class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Reporting Person</label>
-                             <div id="view-who" class="text-sm font-bold text-slate-800"></div>
-                        </div>
-                        
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                             <div class="p-4 bg-indigo-50/50 rounded-2xl border border-indigo-100">
-                                <label class="text-[9px] font-black text-indigo-300 uppercase tracking-widest block mb-1">Team Lead(s)</label>
-                                <div id="view-lol" class="text-xs font-bold text-indigo-700"></div>
-                            </div>
-                             <div class="p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
-                                <label class="text-[9px] font-black text-blue-300 uppercase tracking-widest block mb-1">Operator(s)</label>
-                                <div id="view-lo" class="text-xs font-bold text-blue-700"></div>
-                            </div>
-                        </div>
-
-                        <div class="space-y-4">
-                            <div>
-                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Incident Reason</label>
-                                <div id="view-reason" class="p-5 bg-white rounded-2xl border border-slate-200 text-sm text-slate-600 leading-relaxed shadow-sm"></div>
-                            </div>
-                            <div>
-                                <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Root Cause / Note</label>
-                                <div id="view-remarks" class="p-5 bg-yellow-50/50 rounded-2xl border border-yellow-100 text-sm text-slate-600 leading-relaxed shadow-sm"></div>
-                            </div>
-                        </div>
-
-                        <!-- NEW: Dispute Section -->
-                        <div id="dispute-ui-section" class="pt-4 border-t border-slate-100"></div>
-                    </div>
-
-                    <!-- Right Column: Evidence -->
-                    <div class="flex flex-col h-full">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block mb-2">Evidence / Proof</label>
-                        <div id="view-image-container" class="flex-1 bg-slate-900 rounded-3xl overflow-hidden relative group min-h-[300px] flex items-center justify-center border-4 border-white shadow-xl">
-                            <img id="view-image" src="" loading="lazy" class="max-w-full max-h-full object-contain cursor-zoom-in transition-transform duration-300" onclick="window.viewImage(this.src)">
-                            <div id="view-no-image" class="text-slate-500 font-bold text-xs">No Image Provided</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <div class="p-6 bg-slate-50/80 border-t border-slate-100 flex justify-end gap-3">
-                <button onclick="window.toggleModal('view-record-modal', false)" class="px-8 py-3 bg-white border-2 border-slate-200 rounded-xl font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all">Close Window</button>
-                <button id="view-edit-btn" class="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-100 transition-all flex items-center gap-2 admin-only">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" /></svg>
-                    Edit Record
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Edit/Add Log Modal -->
-    <div id="callout-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[60] flex items-center justify-center p-4 modal-overlay opacity-0">
+    <!-- MODAL: CREATE/EDIT CALL-OUT (Z-1000) -->
+    <div id="callout-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[1000] flex items-center justify-center p-4 modal-overlay opacity-0">
         <div class="bg-white rounded-[2.5rem] w-full max-w-2xl overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
             <div class="p-8 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                 <h2 id="modal-title" class="text-2xl font-black text-slate-900 tracking-tight">Post Log</h2>
                 <button onclick="window.toggleModal('callout-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
             </div>
-            <form id="callout-form" class="p-8 space-y-6 max-h-[70vh] overflow-y-auto">
+            <!-- Added pb-32 to form to allow scrolling for the dropdown -->
+            <form id="callout-form" class="p-8 pb-32 space-y-6 max-h-[70vh] overflow-y-auto relative">
                 <input type="hidden" id="edit-index" value="-1">
-                
-                <!-- NEW: Dispute Toggle (Admin Only) -->
-                <div class="admin-only bg-red-50 p-4 rounded-2xl border border-red-100 flex items-start gap-3">
-                    <div class="relative flex items-start">
-                        <div class="flex items-center h-5">
-                            <input id="form-disputed" name="isDisputed" type="checkbox" class="w-5 h-5 text-red-600 border-gray-300 rounded focus:ring-red-500 cursor-pointer">
-                        </div>
-                    </div>
-                    <div class="ml-1 text-sm">
-                        <label for="form-disputed" class="font-bold text-red-700 cursor-pointer">Mark as Disputed / Valid Explanation</label>
-                        <p class="text-xs text-red-500 mt-1">If checked, this record will be <strong>excluded</strong> from all statistics and coaching counts.</p>
-                    </div>
-                </div>
-
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <div class="space-y-2">
                         <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Timestamp (PHT)</label>
@@ -627,18 +626,18 @@
                     <textarea name="reason" id="form-reason" required rows="3" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Details of the call-out..."></textarea>
                 </div>
                 <div class="space-y-2">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Root Cause / Note</label>
-                    <textarea name="remarks" id="form-remarks" rows="2" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Explain why the incident occurred..."></textarea>
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Corrective Remarks</label>
+                    <textarea name="remarks" id="form-remarks" rows="2" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm" placeholder="Feedback from Lead..."></textarea>
                 </div>
             </form>
             <div class="p-8 bg-slate-50/50 border-t border-slate-100 flex gap-4">
-                <button type="button" onclick="window.toggleModal('callout-modal', false)" id="modal-cancel-btn" class="flex-1 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500">Cancel</button>
+                <button type="button" onclick="window.toggleModal('callout-modal', false)" class="flex-1 py-4 border-2 border-slate-200 rounded-2xl font-bold text-slate-500">Cancel</button>
                 <button type="submit" form="callout-form" id="modal-submit-btn" class="flex-1 py-4 bg-blue-600 text-white rounded-2xl font-bold shadow-lg shadow-blue-100">Confirm Log</button>
             </div>
         </div>
     </div>
     
-    <!-- Search Select Template -->
+    <!-- CUSTOM SEARCHABLE SELECT TEMPLATE -->
     <div id="search-select-template" class="hidden">
         <div class="relative w-full custom-search-select" data-id="">
             <div class="flex items-center justify-between w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm cursor-pointer select-btn border border-transparent hover:border-slate-200">
@@ -647,15 +646,15 @@
             </div>
             <div class="dropdown-content">
                 <div class="p-2 sticky top-0 bg-white border-b border-slate-50">
-                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-50 dropdown-search">
+                    <input type="text" placeholder="Type to search..." class="w-full bg-slate-50 border-0 rounded-lg px-3 py-2 text-xs focus:ring-1 focus:ring-blue-500 dropdown-search">
                 </div>
                 <div class="items-list pb-1"></div>
             </div>
         </div>
     </div>
 
-    <!-- Edit Operator Modal -->
-    <div id="edit-operator-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[70] flex items-center justify-center p-4 modal-overlay opacity-0">
+    <!-- Edit Operator Modal (Z-1010) -->
+    <div id="edit-operator-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[1010] flex items-center justify-center p-4 modal-overlay opacity-0">
         <div class="bg-white rounded-[2rem] w-full max-w-lg overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
             <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
                 <h2 class="text-xl font-black text-slate-900">Edit Operator</h2>
@@ -688,8 +687,8 @@
         </div>
     </div>
     
-    <!-- Confirm Modal -->
-    <div id="app-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md hidden z-[100] flex items-center justify-center p-4 modal-overlay opacity-0">
+    <!-- Confirm Modal (Z-1020) -->
+    <div id="app-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md hidden z-[1020] flex items-center justify-center p-4 modal-overlay opacity-0">
         <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl modal-container opacity-0 scale-90 p-8 space-y-6 text-center">
             <div id="app-modal-icon" class="flex justify-center"></div>
             <div class="space-y-2">
@@ -700,275 +699,11 @@
         </div>
     </div>
 
-    <!-- Login Modal -->
-    <div id="login-modal" class="fixed inset-0 bg-slate-900 z-[2000] flex items-center justify-center p-4">
-        <div class="bg-white w-full max-w-md rounded-3xl p-8 shadow-2xl">
-            <div class="text-center mb-8">
-                <div class="inline-flex p-3 bg-blue-100 text-blue-600 rounded-2xl mb-4">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                </div>
-                <h1 class="text-2xl font-black text-slate-900">Call-out Tracker</h1>
-                <p class="text-slate-500 font-bold text-sm mt-1">Please identify your role</p>
-            </div>
-            
-            <div class="space-y-4">
-                <div>
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Select Role</label>
-                    <div class="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-xl">
-                        <button onclick="window.selectRole('operator')" id="btn-role-operator" class="py-3 rounded-lg text-sm font-bold transition-all bg-white text-slate-900 shadow-sm">Operator</button>
-                        <button onclick="window.selectRole('admin')" id="btn-role-admin" class="py-3 rounded-lg text-sm font-bold transition-all text-slate-400 hover:text-slate-600">Operations Lead</button>
-                    </div>
-                </div>
-
-                <div id="password-field" class="hidden animate-in fade-in slide-in-from-top-2 duration-300">
-                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1 mb-2 block">Access Password</label>
-                    <input type="password" id="login-password" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3.5 text-sm font-bold text-slate-900 focus:ring-2 focus:ring-blue-500" placeholder="Enter password...">
-                </div>
-
-                <button onclick="window.attemptLogin()" class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 transition-all mt-4">
-                    Access System
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <!-- NEW: Operator History Modal -->
-    <div id="operator-history-modal" class="fixed inset-0 bg-slate-900/80 backdrop-blur-md hidden z-[60] flex items-center justify-center p-4 modal-overlay opacity-0">
-        <div class="bg-white rounded-[2.5rem] w-full max-w-4xl overflow-hidden shadow-2xl modal-container opacity-0 scale-90 flex flex-col max-h-[85vh]">
-            <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
-                <div class="flex items-center gap-3">
-                     <div class="p-2 bg-indigo-100 text-indigo-600 rounded-xl">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
-                     </div>
-                    <div>
-                        <h2 id="op-history-title" class="text-xl font-black text-slate-900 tracking-tight">Operator History</h2>
-                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider">All Records</p>
-                    </div>
-                </div>
-                <button onclick="window.toggleModal('operator-history-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
-            </div>
-            
-            <div class="flex-1 overflow-y-auto p-0">
-                <table class="w-full text-left text-sm">
-                    <thead class="bg-slate-50 text-slate-500 uppercase text-[10px] font-black tracking-widest sticky top-0 z-10 shadow-sm">
-                        <tr>
-                            <th class="px-6 py-4">Date</th>
-                            <th class="px-6 py-4">Brand</th>
-                            <th class="px-6 py-4">Reason</th>
-                            <th class="px-6 py-4 text-center">Status</th>
-                            <th class="px-6 py-4 text-right">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="op-history-list" class="divide-y divide-slate-50"></tbody>
-                </table>
-            </div>
-            
-            <div class="p-6 bg-slate-50/80 border-t border-slate-100 flex justify-end">
-                <button onclick="window.toggleModal('operator-history-modal', false)" class="px-6 py-3 bg-white border border-slate-200 rounded-xl font-bold text-slate-500 hover:bg-slate-50 hover:text-slate-700 transition-all text-xs">Close</button>
-            </div>
-        </div>
-    </div>
+    <!-- Toast Notification (Z-9999) -->
+    <div id="toast" class="fixed bottom-10 right-10 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl translate-y-32 transition-transform duration-300 z-[9999] font-bold text-sm"></div>
 
     <!-- 3. MAIN SCRIPT (Uses window variables directly) -->
     <script>
-        // --- PERFORMANCE / RENDER UI LOGIC ---
-        let renderRecordsTimeout = null;
-        window.renderRecordsUI = function() {
-            if(renderRecordsTimeout) clearTimeout(renderRecordsTimeout);
-            renderRecordsTimeout = setTimeout(() => {
-                if(window.renderDashboard) window.renderDashboard();
-                if(window.renderLogTabs) window.renderLogTabs();
-                if(window.renderLogs) window.renderLogs();
-            }, 50); // Debounce
-        };
-
-        window.renderConfigUI = function() {
-            if(window.initSearchSelects) window.initSearchSelects();
-            if(window.renderSettings) window.renderSettings();
-            if(window.populateSelects) window.populateSelects();
-            if(window.populateBrandChecklist) window.populateBrandChecklist();
-            if(window.populateBrandFilter) window.populateBrandFilter();
-        };
-
-        window.renderAll = function() {
-            window.renderConfigUI();
-            window.renderRecordsUI();
-        };
-
-        // --- LOGIN LOGIC ---
-        let selectedRole = 'operator';
-
-        // AUTO-LOGIN CHECK (Run immediately)
-        (function checkLoginState() {
-            const savedRole = localStorage.getItem('callout_user_role');
-            if (savedRole) {
-                document.body.classList.add(savedRole === 'admin' ? 'role-admin' : 'role-operator');
-                // Hide modal immediately via style injection to prevent flash, actual hiding happens on load
-                const style = document.createElement('style');
-                style.innerHTML = '#login-modal { display: none !important; }';
-                document.head.appendChild(style);
-                
-                // Remove style and use class once loaded (optional, but cleaner)
-                window.addEventListener('load', () => {
-                    const modal = document.getElementById('login-modal');
-                    if(modal) modal.classList.add('hidden');
-                    style.remove();
-                });
-            }
-        })();
-
-        window.selectRole = function(role) {
-            selectedRole = role;
-            const btnOp = document.getElementById('btn-role-operator');
-            const btnAd = document.getElementById('btn-role-admin');
-            const passField = document.getElementById('password-field');
-            const passInput = document.getElementById('login-password');
-
-            if (role === 'operator') {
-                btnOp.className = "py-3 rounded-lg text-sm font-bold transition-all bg-white text-slate-900 shadow-sm";
-                btnAd.className = "py-3 rounded-lg text-sm font-bold transition-all text-slate-400 hover:text-slate-600";
-                passField.classList.add('hidden');
-                passInput.value = '';
-            } else {
-                btnAd.className = "py-3 rounded-lg text-sm font-bold transition-all bg-white text-slate-900 shadow-sm";
-                btnOp.className = "py-3 rounded-lg text-sm font-bold transition-all text-slate-400 hover:text-slate-600";
-                passField.classList.remove('hidden');
-                passInput.focus();
-            }
-        };
-
-        window.attemptLogin = function() {
-            if (selectedRole === 'operator') {
-                completeLogin('operator');
-            } else {
-                const pass = document.getElementById('login-password').value;
-                if (pass === 'leads123') {
-                    completeLogin('admin');
-                } else {
-                    if(window.showToast) window.showToast("Incorrect Password");
-                    else alert("Incorrect Password");
-                    const passInput = document.getElementById('login-password');
-                    passInput.classList.add('ring-2', 'ring-red-500');
-                    setTimeout(() => passInput.classList.remove('ring-2', 'ring-red-500'), 500);
-                }
-            }
-        };
-
-        window.logout = function() {
-            localStorage.removeItem('callout_user_role'); // Clear saved session
-            document.body.classList.remove('role-admin', 'role-operator');
-            
-            const modal = document.getElementById('login-modal');
-            modal.classList.remove('hidden');
-            
-            // Remove any inline style that might hide it (from auto-login)
-            modal.style.display = '';
-
-            requestAnimationFrame(() => {
-                modal.classList.remove('opacity-0', 'pointer-events-none');
-            });
-            
-            // Reset state
-            document.getElementById('login-password').value = '';
-            window.selectRole('operator'); 
-            
-            if(window.showToast) window.showToast("Logged out");
-        };
-
-        function completeLogin(role) {
-            localStorage.setItem('callout_user_role', role); // Save session
-            document.body.classList.remove('role-admin', 'role-operator');
-            document.body.classList.add(role === 'admin' ? 'role-admin' : 'role-operator');
-            
-            // Hide modal
-            const modal = document.getElementById('login-modal');
-            modal.classList.add('opacity-0', 'pointer-events-none', 'transition-opacity', 'duration-500');
-            setTimeout(() => modal.classList.add('hidden'), 500);
-            
-            if(window.showToast) window.showToast(`Logged in as ${role === 'admin' ? 'Lead' : 'Operator'}`);
-        }
-
-        // --- 2. MODAL & SEARCH LOGIC ---
-        window.toggleModal = function(id, show) {
-            const el = document.getElementById(id);
-            if(!el) return;
-            const container = el.querySelector('.modal-container');
-            
-            if (show) {
-                el.classList.remove('hidden');
-                // Allow browser paint to process removal of hidden before applying opacity transition
-                requestAnimationFrame(() => {
-                    el.classList.remove('opacity-0');
-                    if(container) {
-                        container.classList.remove('scale-90', 'opacity-0');
-                    }
-                });
-            } else {
-                el.classList.add('opacity-0');
-                if(container) {
-                    container.classList.add('scale-90', 'opacity-0');
-                }
-                setTimeout(() => {
-                    el.classList.add('hidden');
-                }, 300);
-            }
-        };
-
-        window.AppModal = {
-            resolve: null,
-            show(title, message, type = 'confirm') {
-                return new Promise((res) => {
-                    this.resolve = res;
-                    const overlay = document.getElementById('app-modal');
-                    const container = overlay.querySelector('.modal-container');
-                    const actions = document.getElementById('app-modal-actions');
-                    const iconCont = document.getElementById('app-modal-icon');
-                    
-                    document.getElementById('app-modal-title').innerText = title;
-                    document.getElementById('app-modal-message').innerText = message;
-                    
-                    iconCont.innerHTML = type === 'confirm' ? 
-                        `<div class="p-4 bg-blue-50 text-blue-600 rounded-full"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg></div>` : 
-                        `<div class="p-4 bg-green-50 text-green-600 rounded-full"><svg class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" /></svg></div>`;
-
-                    actions.innerHTML = type === 'confirm' ? 
-                        `<button onclick="window.AppModal.handle(false)" class="flex-1 py-3 border border-slate-100 rounded-xl font-bold text-slate-400">Cancel</button><button onclick="window.AppModal.handle(true)" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">Proceed</button>` : 
-                        `<button onclick="window.AppModal.handle(true)" class="flex-1 py-3 bg-slate-900 text-white rounded-xl font-bold">Okay</button>`;
-
-                    overlay.classList.remove('hidden');
-                    requestAnimationFrame(() => {
-                        overlay.classList.remove('opacity-0');
-                        container.classList.remove('scale-90', 'opacity-0');
-                    });
-                });
-            },
-            handle(value) {
-                const overlay = document.getElementById('app-modal');
-                const container = overlay.querySelector('.modal-container');
-                overlay.classList.add('opacity-0');
-                container.classList.add('scale-90', 'opacity-0');
-                setTimeout(() => {
-                    overlay.classList.add('hidden');
-                    this.resolve(value);
-                }, 300);
-            }
-        };
-
-        const roleCategories = [
-            { id: 'ams', label: 'Account Manager' },
-            { id: 'als', label: 'Account Lead' },
-            { id: 'hosts', label: 'Live Host' },
-            { id: 'qas', label: 'Quality Assurance' }
-        ];
-
-        const customSelects = {
-            brand: null,
-            reporter: null,
-            lol: null,
-            lo: null
-        };
-
-        // --- Select & Filter Logic ---
         function buildSearchSelect(containerId, options, initialValue = '', onSelect = null, isMulti = false) {
             const container = document.getElementById(containerId);
             if (!container) return null;
@@ -1003,7 +738,7 @@
 
             function updateMultiDisplay() {
                 if (selectedMulti.length === 0) {
-                    selectedText.innerText = "Select Operators...";
+                    selectedText.innerText = "Select...";
                     selectedText.classList.add('text-slate-400');
                 } else {
                     selectedText.innerText = selectedMulti.join(', ');
@@ -1081,6 +816,7 @@
                 refresh: (newOptions) => { options = newOptions; renderList(''); }
             };
         }
+        
         window.onclick = () => { document.querySelectorAll('.dropdown-content').forEach(d => d.classList.remove('show')); };
 
         // --- Main Init ---
@@ -1091,9 +827,6 @@
                 window.renderAll();
                 window.showSection('dashboard');
                 window.isInitialized = true;
-                
-                // Extra init calls
-                window.populateBrandChecklist();
             } catch (e) { console.error("Init Error:", e); }
         };
 
@@ -1108,30 +841,29 @@
             if(!window.config) return;
             
             const brandOpts = (window.config.brands || []).sort().map(b => ({ label: b }));
-            if (customSelects.brand) customSelects.brand.refresh(brandOpts);
-            else customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => window.autoSelectOperatorByBrand(brandName));
+            if (window.customSelects.brand) window.customSelects.brand.refresh(brandOpts);
+            else window.customSelects.brand = buildSearchSelect('brand-select-container', brandOpts, '', (brandName) => window.autoSelectOperatorByBrand(brandName));
 
             const reporterOpts = [];
-            roleCategories.forEach(cat => {
+            window.roleCategories.forEach(cat => {
                 const names = [...(window.config[cat.id] || [])].sort();
                 if(names.length > 0) {
                     reporterOpts.push({ label: cat.label, isCategory: true });
                     names.forEach(n => reporterOpts.push({ label: `[${cat.label}] ${n}` }));
                 }
             });
-            if (customSelects.reporter) customSelects.reporter.refresh(reporterOpts);
-            else customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
+            if (window.customSelects.reporter) window.customSelects.reporter.refresh(reporterOpts);
+            else window.customSelects.reporter = buildSearchSelect('reporter-select-container', reporterOpts);
 
             const leadOpts = (window.config.lols || []).sort().map(l => ({ label: l }));
-            if (customSelects.lol) customSelects.lol.refresh(leadOpts);
-            else customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => window.refreshOperatorSelect(val), true); // MULTI SELECT for Team Lead
+            if (window.customSelects.lol) window.customSelects.lol.refresh(leadOpts);
+            else window.customSelects.lol = buildSearchSelect('lol-select-container', leadOpts, '', (val) => window.refreshOperatorSelect(val), true); // MULTI SELECT for Team Lead
 
-            if (customSelects.lo) customSelects.lo.refresh([]);
-            else customSelects.lo = buildSearchSelect('lo-select-container', [], [], null, true); // MULTI SELECT for Operator
-        }
+            if (window.customSelects.lo) window.customSelects.lo.refresh([]);
+            else window.customSelects.lo = buildSearchSelect('lo-select-container', [], [], null, true); // MULTI SELECT for Operator
+        };
 
         window.refreshOperatorSelect = function(leadNames) {
-            // leadNames can be array or string
             const leads = Array.isArray(leadNames) ? leadNames : (leadNames ? [leadNames] : []);
             
             const filtered = window.config.los
@@ -1139,461 +871,87 @@
                 .sort((a,b) => a.name.localeCompare(b.name))
                 .map(o => ({ label: o.name }));
                 
-            if(customSelects.lo) { 
-                customSelects.lo.refresh(filtered); 
-                customSelects.lo.setValue([]); 
+            if(window.customSelects.lo) { 
+                window.customSelects.lo.refresh(filtered); 
+                window.customSelects.lo.setValue([]); 
             }
-        }
+        };
 
         window.autoSelectOperatorByBrand = function(brandName) {
             const assignedOps = window.config.los.filter(o => o.brands && o.brands.includes(brandName));
-            
             if (assignedOps.length > 0) {
                 const uniqueLeads = [...new Set(assignedOps.map(o => o.lead))];
-                
-                // Always set Leads (works for single or multiple)
-                if (customSelects.lol) customSelects.lol.setValue(uniqueLeads);
-                
-                // Show all operators for these leads
+                if (window.customSelects.lol) window.customSelects.lol.setValue(uniqueLeads);
                 window.refreshOperatorSelect(uniqueLeads);
-                
-                // Optionally refine operator selection if only specific ones match the brand
                  const brandSpecificOpNames = assignedOps.map(o => o.name);
-                 
-                if (customSelects.lo) {
-                   // If only 1 specific op matches, select them. Otherwise leave blank filtered list.
+                if (window.customSelects.lo) {
                     if (brandSpecificOpNames.length === 1) {
-                         customSelects.lo.setValue(brandSpecificOpNames);
-                         if(window.showToast) window.showToast("Auto-selected operator.");
+                         window.customSelects.lo.setValue(brandSpecificOpNames);
+                         window.showToast("Auto-selected operator.");
                     } else {
-                        customSelects.lo.setValue([]);
-                        if(window.showToast) window.showToast("Filtered by brand. Please select operators.");
+                        window.customSelects.lo.setValue([]);
+                        window.showToast("Filtered by brand. Please select operators.");
                     }
                 }
             } else {
-                if (customSelects.lol) customSelects.lol.setValue([]);
-                if (customSelects.lo) { customSelects.lo.refresh([]); customSelects.lo.setValue([]); }
+                if (window.customSelects.lol) window.customSelects.lol.setValue([]);
+                if (window.customSelects.lo) { window.customSelects.lo.refresh([]); window.customSelects.lo.setValue([]); }
             }
-        }
-
-        window.migrateReporterNames = function() {
-            if (!window.records || window.records.length === 0) return;
-            
-            let updates = 0;
-            // Iterate and update records in memory first
-            window.records.forEach(r => {
-                if (r.who && !r.who.startsWith('[')) {
-                    // Try to find the role
-                    for (const cat of roleCategories) {
-                        if (window.config[cat.id] && window.config[cat.id].includes(r.who)) {
-                            const newWho = `[${cat.label}] ${r.who}`;
-                            if (r.who !== newWho) {
-                                // Update local record
-                                r.who = newWho;
-                                updates++;
-                                // Update Firebase silently if ID exists
-                                if (r.id && window.updateFirebaseRecord) {
-                                    window.updateFirebaseRecord(r.id, { who: newWho }, true);
-                                }
-                            }
-                            break; 
-                        }
-                    }
-                }
-            });
-
-            if (updates > 0) {
-                console.log(`Migrated ${updates} reporter names.`);
-                // Refresh UI to show new names immediately
-                if(window.renderRecordsUI) window.renderRecordsUI();
-            }
-        }
+        };
 
         // --- ACTIONS (Using window.config/records) ---
-        
-        // NEW: View Record Logic (Dedicated View Window)
-        window.viewRecord = function(index) {
-            const r = window.records[index];
-            if(!r) return;
-
-            // Handle Dispute Badge
-            const idDisplay = document.getElementById('view-id-display');
-            if(r.isDisputed) {
-                idDisplay.innerHTML = `<span class="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-black mr-2">DISPUTED / VOID</span> ${r.id ? `REF: ${r.id.slice(-6).toUpperCase()}` : 'LOCAL RECORD'}`;
-            } else {
-                idDisplay.innerText = r.id ? `REF: ${r.id.slice(-6).toUpperCase()}` : 'LOCAL RECORD';
-            }
-
-            document.getElementById('view-date').innerText = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'full', timeStyle: 'medium' });
-            document.getElementById('view-brand').innerText = r.brand || '-';
-            document.getElementById('view-who').innerText = r.who || '-';
-            document.getElementById('view-lol').innerText = Array.isArray(r.lol) ? r.lol.join(', ') : (r.lol || '-');
-            document.getElementById('view-lo').innerText = Array.isArray(r.lo) ? r.lo.join(', ') : (r.lo || '-');
-            document.getElementById('view-reason').innerText = r.reason || 'No details provided.';
-            document.getElementById('view-remarks').innerText = r.remarks || 'No remarks provided.';
-
-            // --- Dispute Section Logic ---
-            const disputeUI = document.getElementById('dispute-ui-section');
-            const isAdmin = document.body.classList.contains('role-admin');
-            let disputeHtml = '';
-
-            // Status Logic: 'pending' | 'approved' | 'rejected' | or none
-            if (r.disputeStatus === 'pending') {
-                disputeHtml += `<div class="bg-orange-50 p-4 rounded-xl border border-orange-100 mb-4 animate-in fade-in slide-in-from-bottom-2">
-                    <div class="flex items-start gap-3">
-                        <div class="p-2 bg-orange-100 text-orange-600 rounded-lg">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
-                        </div>
-                        <div class="flex-1">
-                            <h4 class="font-bold text-orange-700 text-xs uppercase mb-1">Dispute Pending Review</h4>
-                            <p class="text-sm text-slate-600 italic bg-white p-3 rounded-lg border border-orange-100">"${r.disputeReason}"</p>
-                            ${isAdmin ? `
-                            <div id="admin-dispute-actions">
-                                <div class="flex gap-2 mt-3">
-                                    <button onclick="window.resolveDispute(${index}, true)" class="px-4 py-2 bg-green-600 text-white text-xs font-bold rounded-lg hover:bg-green-700 shadow-sm transition-all flex items-center gap-1">
-                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
-                                        Approve (Void Record)
-                                    </button>
-                                    <button onclick="document.getElementById('admin-reject-input').classList.remove('hidden'); document.getElementById('admin-dispute-actions').classList.add('hidden');" class="px-4 py-2 bg-white border border-red-200 text-red-600 text-xs font-bold rounded-lg hover:bg-red-50 shadow-sm transition-all">Reject Dispute</button>
-                                </div>
-                            </div>
-                            <div id="admin-reject-input" class="hidden mt-3 space-y-3 bg-red-50/50 p-3 rounded-xl border border-red-100">
-                                <label class="text-[10px] font-black text-red-400 uppercase tracking-widest block">Reason for Rejection</label>
-                                <textarea id="reject-reason-text" class="w-full bg-white border border-red-200 rounded-xl p-3 text-xs text-red-900 focus:ring-2 focus:ring-red-500 outline-none" rows="2" placeholder="Why is this dispute being rejected?"></textarea>
-                                <div class="flex gap-2">
-                                    <button onclick="window.resolveDispute(${index}, false, document.getElementById('reject-reason-text').value)" class="px-4 py-2 bg-red-600 text-white text-xs font-bold rounded-lg hover:bg-red-700 shadow-md">Confirm Reject</button>
-                                    <button onclick="document.getElementById('admin-reject-input').classList.add('hidden'); document.getElementById('admin-dispute-actions').classList.remove('hidden');" class="px-4 py-2 bg-white border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50">Cancel</button>
-                                </div>
-                            </div>
-                            ` : `<p class="text-[10px] text-orange-400 mt-2 font-bold">Waiting for Operations Lead to review.</p>`}
-                        </div>
-                    </div>
-                </div>`;
-            } else if (r.disputeStatus === 'approved') {
-                disputeHtml += `<div class="bg-green-50 p-4 rounded-xl border border-green-100 mb-4 animate-in fade-in slide-in-from-bottom-2">
-                    <div class="flex items-start gap-3">
-                        <div class="p-2 bg-green-100 text-green-600 rounded-lg">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" /></svg>
-                        </div>
-                        <div class="flex-1">
-                            <h4 class="font-bold text-green-700 text-xs uppercase mb-1">Dispute Approved</h4>
-                            <p class="text-[10px] text-green-600 font-bold mb-2">This record has been voided and excluded from stats.</p>
-                            <div class="bg-white p-3 rounded-lg border border-green-100">
-                                <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Operator's Reason:</span>
-                                <p class="text-sm text-slate-600 italic">"${r.disputeReason}"</p>
-                            </div>
-                            ${isAdmin ? `
-                            <div class="mt-3">
-                                <button onclick="window.undoDisputeDecision(${index})" class="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 shadow-sm transition-all">Undo Approval</button>
-                            </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                </div>`;
-            } else if (r.disputeStatus === 'rejected') {
-                 disputeHtml += `<div class="bg-red-50 p-4 rounded-xl border border-red-100 mb-4 animate-in fade-in slide-in-from-bottom-2">
-                    <div class="flex items-start gap-3">
-                        <div class="p-2 bg-red-100 text-red-600 rounded-lg">
-                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" /></svg>
-                        </div>
-                        <div class="flex-1">
-                            <h4 class="font-bold text-red-700 text-xs uppercase mb-1">Dispute Rejected</h4>
-                            <p class="text-[10px] text-red-600 font-bold mb-2">The dispute was reviewed and denied. Record remains active.</p>
-                            <div class="space-y-2">
-                                <div class="bg-white p-3 rounded-lg border border-red-100">
-                                    <span class="text-[9px] font-black text-slate-400 uppercase tracking-widest block mb-1">Operator's Reason:</span>
-                                    <p class="text-xs text-slate-600 italic">"${r.disputeReason}"</p>
-                                </div>
-                                ${r.disputeRejectionReason ? `
-                                <div class="bg-white p-3 rounded-lg border border-red-100">
-                                    <span class="text-[9px] font-black text-red-400 uppercase tracking-widest block mb-1">Lead's Note:</span>
-                                    <p class="text-xs text-red-800 italic">"${r.disputeRejectionReason}"</p>
-                                </div>
-                                ` : ''}
-                            </div>
-                            ${isAdmin ? `
-                            <div class="mt-3">
-                                <button onclick="window.undoDisputeDecision(${index})" class="px-4 py-2 bg-white border border-slate-200 text-slate-600 text-xs font-bold rounded-lg hover:bg-slate-50 shadow-sm transition-all">Undo Rejection</button>
-                            </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                </div>`;
-            }
-
-            // Show "File Dispute" button for Operators if no dispute exists or it was rejected (optional, usually just if none)
-            if (!isAdmin && !r.disputeStatus) {
-                 disputeHtml += `<div id="file-dispute-container">
-                    <button onclick="window.openDisputeForm()" id="btn-file-dispute" class="text-xs font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 transition-all">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 11.5V14m0-2.5v-6a1.5 1.5 0 113 0m-3 6a1.5 1.5 0 00-3 0v2a7.5 7.5 0 0015 0v-5a1.5 1.5 0 00-3 0m-6-3V11m0-5.5v-1a1.5 1.5 0 013 0v1m0 0V11m0-5.5a1.5 1.5 0 013 0v3m0 0V11" /></svg>
-                        File a Dispute for this record
-                    </button>
-                    <div id="dispute-input-container" class="hidden mt-3 space-y-3 bg-slate-50 p-4 rounded-xl border border-slate-100 animate-in fade-in slide-in-from-top-2">
-                        <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest block">Reason for Dispute</label>
-                        <textarea id="dispute-reason-text" class="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-shadow" rows="3" placeholder="Explain why this call-out is invalid..."></textarea>
-                        <div class="flex gap-2">
-                            <button onclick="window.submitDispute(${index})" class="px-4 py-2 bg-blue-600 text-white text-xs font-bold rounded-lg hover:bg-blue-700 shadow-md shadow-blue-100">Submit Dispute</button>
-                            <button onclick="document.getElementById('dispute-input-container').classList.add('hidden'); document.getElementById('btn-file-dispute').classList.remove('hidden');" class="px-4 py-2 bg-white border border-slate-200 text-slate-500 text-xs font-bold rounded-lg hover:bg-slate-50">Cancel</button>
-                        </div>
-                    </div>
-                 </div>`;
-            }
-
-            disputeUI.innerHTML = disputeHtml;
-
-            const img = document.getElementById('view-image');
-            const noImg = document.getElementById('view-no-image');
-            if(r.proof) {
-                img.src = r.proof;
-                img.classList.remove('hidden');
-                noImg.classList.add('hidden');
-            } else {
-                img.src = '';
-                img.classList.add('hidden');
-                noImg.classList.remove('hidden');
-            }
-
-            // Bind Edit Button
-            const editBtn = document.getElementById('view-edit-btn');
-            editBtn.onclick = function() {
-                window.toggleModal('view-record-modal', false);
-                window.openCalloutModal(index, true); // Open in Edit Mode
-            };
-
-            window.toggleModal('view-record-modal', true);
-        };
-
-        // NEW: Operator History
-        window.openOperatorHistory = function(name) {
-            let histHtml = '';
-            const opRecords = window.records.filter(r => {
-                // If r.lo is array, check if it includes name
-                if(Array.isArray(r.lo)) return r.lo.includes(name);
-                return r.lo === name;
-            });
-            
-            // Sort
-            opRecords.sort((a,b) => new Date(b.datetime) - new Date(a.datetime));
-
-            document.getElementById('op-history-title').innerText = name;
-            const list = document.getElementById('op-history-list');
-            
-            if(opRecords.length === 0) {
-                histHtml = `<tr><td colspan="5" class="px-6 py-8 text-center text-xs text-slate-400 italic">No records found for this operator.</td></tr>`;
-            } else {
-                opRecords.forEach(r => {
-                    const originalIdx = window.records.findIndex(rec => rec.id === r.id);
-                    const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
-                    
-                    let statusBadge = '<span class="bg-green-100 text-green-600 px-2 py-1 rounded text-[10px] font-bold">VALID</span>';
-                    if (r.isDisputed) statusBadge = '<span class="bg-red-100 text-red-600 px-2 py-1 rounded text-[10px] font-bold">VOID</span>';
-                    else if (r.disputeStatus === 'pending') statusBadge = '<span class="bg-orange-100 text-orange-600 px-2 py-1 rounded text-[10px] font-bold">PENDING</span>';
-
-                    histHtml += `
-                        <tr class="hover:bg-slate-50 transition-colors border-b border-slate-50 last:border-0 cursor-pointer" onclick="window.toggleModal('operator-history-modal', false); setTimeout(() => window.viewRecord(${originalIdx}), 300)">
-                            <td class="px-6 py-4 font-bold text-slate-900 whitespace-nowrap">${date}</td>
-                            <td class="px-6 py-4 font-medium text-slate-600">${r.brand}</td>
-                            <td class="px-6 py-4 text-slate-500 italic truncate max-w-[150px]">${r.reason}</td>
-                            <td class="px-6 py-4 text-center">${statusBadge}</td>
-                            <td class="px-6 py-4 text-right">
-                                <button class="text-blue-600 hover:text-blue-800 text-[10px] font-bold uppercase">View</button>
-                            </td>
-                        </tr>
-                    `;
-                });
-            }
-            list.innerHTML = histHtml;
-            window.toggleModal('operator-history-modal', true);
-        }
-
-        // NEW: Dispute Functions
-        window.openDisputeForm = function() {
-            document.getElementById('dispute-input-container').classList.remove('hidden');
-            document.getElementById('btn-file-dispute').classList.add('hidden');
-        };
-
-        window.submitDispute = async function(index) {
-            const reason = document.getElementById('dispute-reason-text').value.trim();
-            if (!reason) {
-                if(window.showToast) window.showToast("Please enter a reason.");
-                return;
-            }
-            
-            const confirmed = await window.AppModal.show("Submit Dispute", "Are you sure you want to dispute this record?", "confirm");
-            if (!confirmed) return;
-
-            // Update record status to pending
-            const r = window.records[index];
-            const updates = {
-                disputeStatus: 'pending',
-                disputeReason: reason,
-                disputeDate: Date.now()
-            };
-
-            // Optimistic Update
-            Object.assign(r, updates);
-            
-            // Save to Firebase
-            if (window.updateFirebaseRecord && r.id) {
-                await window.updateFirebaseRecord(r.id, updates);
-            }
-            
-            if(window.showToast) window.showToast("Dispute submitted for review.");
-            window.viewRecord(index); // Refresh view
-        };
-
-        window.resolveDispute = async function(index, isApproved, reason = '') {
-            if (!isApproved && !reason.trim()) {
-                if(window.showToast) window.showToast("Rejection reason is required.");
-                return;
-            }
-
-            const action = isApproved ? "Approve" : "Reject";
-            const confirmed = await window.AppModal.show(`${action} Dispute`, `Are you sure you want to ${action.toLowerCase()} this dispute?`, "confirm");
-            if (!confirmed) return;
-
-            const r = window.records[index];
-            const updates = {
-                disputeStatus: isApproved ? 'approved' : 'rejected',
-                isDisputed: isApproved, // IMPORTANT: This triggers the void logic in stats
-                disputeRejectionReason: isApproved ? null : reason
-            };
-
-            // Optimistic Update
-            Object.assign(r, updates);
-
-            // Save to Firebase
-            if (window.updateFirebaseRecord && r.id) {
-                await window.updateFirebaseRecord(r.id, updates);
-            }
-
-            if(window.showToast) window.showToast(`Dispute ${isApproved ? 'Approved' : 'Rejected'}`);
-            
-            // Immediate reflection
-            window.viewRecord(index); 
-            if(window.renderRecordsUI) window.renderRecordsUI();
-        };
-
-        // NEW: Undo Decision Function
-        window.undoDisputeDecision = async function(index) {
-            const confirmed = await window.AppModal.show("Undo Decision", "Are you sure you want to undo this decision? The dispute will be marked as 'Pending' again.", "confirm");
-            if (!confirmed) return;
-
-            const r = window.records[index];
-            const updates = {
-                disputeStatus: 'pending',
-                isDisputed: false, // Bring it back to active counts until approved
-                disputeRejectionReason: null 
-            };
-
-            // Optimistic Update
-            Object.assign(r, updates);
-
-            // Save to Firebase
-            if (window.updateFirebaseRecord && r.id) {
-                await window.updateFirebaseRecord(r.id, updates);
-            }
-
-            if(window.showToast) window.showToast("Decision undone. Dispute is pending.");
-            
-            // Immediate reflection
-            window.viewRecord(index); 
-            if(window.renderRecordsUI) window.renderRecordsUI();
-        };
-
-        window.openCalloutModal = function(editIdx = -1, forceEdit = false) {
+        window.openCalloutModal = function(editIdx = -1) {
             try {
-                if (!window.isInitialized || !customSelects.brand) { window.initSearchSelects(); window.isInitialized = true; }
+                if (!window.isInitialized || !window.customSelects.brand) { window.initSearchSelects(); window.isInitialized = true; }
                 const form = document.getElementById('callout-form');
-                if (!form) { console.error("Form not found!"); return; } // Safety
-
                 const submitBtn = document.getElementById('modal-submit-btn');
-                const cancelBtn = document.getElementById('modal-cancel-btn');
                 const title = document.getElementById('modal-title');
-                
-                const editIndexEl = document.getElementById('edit-index');
-                if(editIndexEl) editIndexEl.value = editIdx;
-                
+                document.getElementById('edit-index').value = editIdx;
                 form.reset();
-                
-                // Helper to set editable state (Always editable in this function now)
-                const setEditable = () => {
-                    const elements = form.querySelectorAll('input, textarea, select, button');
-                    elements.forEach(el => {
-                        el.disabled = false;
-                        el.classList.remove('bg-slate-100', 'text-slate-500');
-                    });
-                    document.querySelectorAll('.custom-search-select').forEach(el => {
-                        el.classList.remove('pointer-events-none', 'opacity-60', 'bg-slate-100');
-                    });
-                    submitBtn.classList.remove('hidden');
-                    cancelBtn.innerText = "Cancel";
-                };
                 
                 if (editIdx > -1 && editIdx < window.records.length) {
                     const r = window.records[editIdx];
                     form.dataset.recordId = r.id; 
-                    title.innerText = "Revise Entry"; // Always "Revise" if editIdx exists here
-                    
-                    const dtEl = document.getElementById('form-datetime');
-                    if(dtEl && r.datetime) dtEl.value = r.datetime;
-                    
-                    // Set Dispute Checkbox safely
-                    const disputeEl = document.getElementById('form-disputed');
-                    if(disputeEl) disputeEl.checked = !!r.isDisputed;
-
-                    if(customSelects.brand) customSelects.brand.setValue(r.brand);
-                    if(customSelects.reporter) customSelects.reporter.setValue(r.who);
+                    title.innerText = "Revise Entry";
+                    submitBtn.innerText = "Apply Changes";
+                    document.getElementById('form-datetime').value = r.datetime;
+                    if(window.customSelects.brand) window.customSelects.brand.setValue(r.brand);
+                    if(window.customSelects.reporter) window.customSelects.reporter.setValue(r.who);
                     
                     let lolVal = Array.isArray(r.lol) ? r.lol : (r.lol ? [r.lol] : []);
-                    if(customSelects.lol) customSelects.lol.setValue(lolVal);
+                    if(window.customSelects.lol) window.customSelects.lol.setValue(lolVal);
+                    
                     window.refreshOperatorSelect(lolVal);
                     
                     let loVal = Array.isArray(r.lo) ? r.lo : (r.lo ? [r.lo] : []);
-                    if(customSelects.lo) customSelects.lo.setValue(loVal);
+                    if(window.customSelects.lo) window.customSelects.lo.setValue(loVal);
                     
-                    const reasonEl = document.getElementById('form-reason');
-                    if(reasonEl) reasonEl.value = r.reason || '';
-                    
-                    const remarksEl = document.getElementById('form-remarks');
-                    if(remarksEl) remarksEl.value = r.remarks || '';
-                    
-                    setEditable();
+                    document.getElementById('form-reason').value = r.reason;
+                    document.getElementById('form-remarks').value = r.remarks;
                 } else {
                     delete form.dataset.recordId;
                     title.innerText = "New Call-Out Log";
-                    
-                    const dtEl = document.getElementById('form-datetime');
-                    if(dtEl) dtEl.value = getPHTISOString();
-                    
-                    const disputeEl = document.getElementById('form-disputed');
-                    if(disputeEl) disputeEl.checked = false; // Reset checkbox for new
-                    
-                    if(customSelects.brand) customSelects.brand.setValue('');
-                    if(customSelects.reporter) customSelects.reporter.setValue('');
-                    if(customSelects.lol) customSelects.lol.setValue([]);
-                    if(customSelects.lo) customSelects.lo.setValue([]);
-                    
-                    setEditable();
+                    submitBtn.innerText = "Confirm Record";
+                    document.getElementById('form-datetime').value = getPHTISOString();
+                    if(window.customSelects.brand) window.customSelects.brand.setValue('');
+                    if(window.customSelects.reporter) window.customSelects.reporter.setValue('');
+                    if(window.customSelects.lol) window.customSelects.lol.setValue([]);
+                    if(window.customSelects.lo) window.customSelects.lo.setValue([]);
                 }
                 window.toggleModal('callout-modal', true);
             } catch (e) { console.error("Open Modal Error:", e); alert("Issue opening form. Please refresh."); }
-        }
+        };
 
         document.getElementById('callout-form').onsubmit = async (e) => {
             e.preventDefault();
             const form = e.target;
             const editIdx = parseInt(document.getElementById('edit-index').value);
             const isEdit = editIdx > -1;
-            const brandVal = customSelects.brand.getValue();
-            const reporterVal = customSelects.reporter.getValue();
-            const lolVal = customSelects.lol.getValue(); // Array
-            const loVal = customSelects.lo.getValue(); // Array
-            
-            const disputeEl = document.getElementById('form-disputed');
-            const isDisputed = disputeEl ? disputeEl.checked : false;
+            const brandVal = window.customSelects.brand.getValue();
+            const reporterVal = window.customSelects.reporter.getValue();
+            const lolVal = window.customSelects.lol.getValue(); 
+            const loVal = window.customSelects.lo.getValue(); 
 
-            // Validation for arrays
             const isLolValid = Array.isArray(lolVal) ? lolVal.length > 0 : !!lolVal;
             const isLoValid = Array.isArray(loVal) ? loVal.length > 0 : !!loVal;
 
@@ -1618,24 +976,31 @@
                 lol: lolVal,
                 remarks: formData.get('remarks'),
                 proof: proofBase64,
-                isDisputed: isDisputed, // Save Dispute State
                 timestamp: isEdit ? window.records[editIdx].timestamp : Date.now()
             };
 
-            // If admin manually toggles dispute in edit form, ensure we reset or set disputeStatus accordingly if needed, 
-            // but usually manual override is stronger. We'll leave disputeStatus as is unless we want manual uncheck to clear it.
-            // For now, let's keep it simple.
+            if (isEdit && window.updateFirebaseRecord && form.dataset.recordId) await window.updateFirebaseRecord(form.dataset.recordId, recordData);
+            else if (window.addFirebaseRecord) await window.addFirebaseRecord(recordData);
+            
+            e.target.reset(); window.toggleModal('callout-modal', false);
+        };
 
-            try {
-                if (isEdit && window.updateFirebaseRecord && form.dataset.recordId) await window.updateFirebaseRecord(form.dataset.recordId, recordData);
-                else if (window.addFirebaseRecord) await window.addFirebaseRecord(recordData);
-                
-                e.target.reset(); 
-                window.toggleModal('callout-modal', false);
-            } catch (err) {
-                console.error("Save Error:", err);
-                if(window.showToast) window.showToast("Error occurred during save.");
-            }
+        window.renderAll = function() {
+            window.renderDashboard();
+            window.renderLogTabs();
+            window.renderLogs();
+            window.renderSettings();
+            window.initSearchSelects();
+            window.populateSelects();
+        };
+
+        window.populateSelects = function() {
+            if(!window.config.lols) return;
+            const sortedLeads = [...window.config.lols].sort();
+            const newLoLead = document.getElementById('new-lo-lead');
+            if(newLoLead) newLoLead.innerHTML = '<option value="">Select Team Lead</option>' + sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
+            const editOpLead = document.getElementById('edit-op-lead');
+            if(editOpLead) editOpLead.innerHTML = sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
         };
 
         window.renderDashboard = function() {
@@ -1644,117 +1009,82 @@
             const now = new Date();
             let targetMonth, targetYear;
             let filterLabel = 'Overall';
-            
-            // Base Filter by Date
-            let allDateFilteredRecords = window.records;
+            let filteredRecords = window.records;
 
             if (filterType === 'current_month') {
                 targetMonth = now.getMonth(); targetYear = now.getFullYear(); filterLabel = 'This Month';
-                allDateFilteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
+                filteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
             } else if (filterType === 'specific_month' && monthPickerValue) {
                 const [yearStr, monthStr] = monthPickerValue.split('-');
                 targetYear = parseInt(yearStr); targetMonth = parseInt(monthStr) - 1; 
                 const dateObj = new Date(targetYear, targetMonth);
                 filterLabel = dateObj.toLocaleString('en-US', { month: 'long', year: 'numeric' });
-                allDateFilteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
+                filteredRecords = window.records.filter(r => { const d = new Date(r.datetime); return d.getMonth() === targetMonth && d.getFullYear() === targetYear; });
             } else { filterLabel = 'Lifetime Total'; }
 
-            // FILTER OUT DISPUTED RECORDS FOR STATS
-            const validRecords = allDateFilteredRecords.filter(r => !r.isDisputed);
-
             document.getElementById('label-total').innerText = filterLabel;
-            document.getElementById('stat-total').innerText = validRecords.length;
-            
-            // Today's Active (Valid Only)
-            document.getElementById('stat-today').innerText = validRecords.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
-            
+            document.getElementById('stat-total').innerText = filteredRecords.length;
+            document.getElementById('stat-today').innerText = window.records.filter(r => new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(new Date(r.datetime)) === new Intl.DateTimeFormat('en-US', {timeZone: 'Asia/Manila'}).format(now)).length;
             document.getElementById('coaching-period-label').innerText = filterType === 'overall' ? 'Overall' : filterLabel;
             
-            // Stats (Valid Only)
-            if(validRecords.length > 0) {
-                const brands = validRecords.map(r => r.brand);
+            if(filteredRecords.length > 0) {
+                const brands = filteredRecords.map(r => r.brand);
                 const mostBrand = brands.sort((a,b) => brands.filter(v => v===a).length - brands.filter(v => v===b).length).pop();
                 document.getElementById('stat-brand').innerText = mostBrand || '-';
-                const reporters = validRecords.map(r => r.who);
+                const reporters = filteredRecords.map(r => r.who);
                 const mostWho = reporters.sort((a,b) => reporters.filter(v => v===a).length - reporters.filter(v => v===b).length).pop();
                 document.getElementById('stat-who').innerText = mostWho || '-';
             } else {
                 document.getElementById('stat-brand').innerText = '-'; document.getElementById('stat-who').innerText = '-';
             }
 
-            // Coaching (Valid Only)
             const coachingContainer = document.getElementById('coaching-list');
             if(coachingContainer) {
                 const operatorCounts = {};
-                validRecords.forEach(r => { 
-                    // Handle array of operators in a single record
+                filteredRecords.forEach(r => { 
                     const operators = Array.isArray(r.lo) ? r.lo : [r.lo];
                     operators.forEach(opName => {
                          if(opName) operatorCounts[opName] = (operatorCounts[opName] || 0) + 1;
                     });
                 });
-                
-                const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a);
-                
-                let coachHtml = '';
+                const sortedOperators = Object.entries(operatorCounts).sort(([,a], [,b]) => b - a).slice(0, 6);
+                coachingContainer.innerHTML = '';
                 if(sortedOperators.length === 0) {
-                    coachHtml = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded</div>`;
+                    coachingContainer.innerHTML = `<div class="col-span-full text-center text-slate-400 text-xs italic py-4">No violations recorded</div>`;
                 } else {
                     const maxCount = sortedOperators[0][1];
                     sortedOperators.forEach(([name, count], index) => {
                         const percentage = (count / maxCount) * 100;
-                        const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : (index === 2 ? 'bg-blue-400' : 'bg-slate-400'));
-                        
-                        coachHtml += `
-                        <div onclick="window.openOperatorHistory('${name}')" class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 cursor-pointer hover:bg-blue-50/50 transition-all group">
-                            <div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm group-hover:text-blue-600 transition-colors">${index + 1}</div>
-                            <div class="flex-1">
-                                <div class="flex justify-between items-center mb-1">
-                                    <span class="text-xs font-bold text-slate-700 truncate max-w-[100px] group-hover:text-blue-700 transition-colors">${name}</span>
-                                    <span class="text-[10px] font-black text-slate-400">${count} Calls</span>
-                                </div>
-                                <div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden">
-                                    <div class="h-full ${barColor} rounded-full" style="width: ${percentage}%"></div>
-                                </div>
-                            </div>
-                        </div>`;
+                        const barColor = index === 0 ? 'bg-red-500' : (index === 1 ? 'bg-orange-400' : 'bg-blue-400');
+                        coachingContainer.innerHTML += `<div class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100"><div class="w-6 h-6 rounded-full bg-white flex items-center justify-center text-[10px] font-black text-slate-500 shadow-sm">${index + 1}</div><div class="flex-1"><div class="flex justify-between items-center mb-1"><span class="text-xs font-bold text-slate-700 truncate max-w-[100px]">${name}</span><span class="text-[10px] font-black text-slate-400">${count} Calls</span></div><div class="h-1.5 w-full bg-slate-200 rounded-full overflow-hidden"><div class="h-full ${barColor} rounded-full" style="width: ${percentage}%"></div></div></div></div>`;
                     });
                 }
-                coachingContainer.innerHTML = coachHtml;
             }
 
-            // Recent Table (Shows ALL records, even disputed, but visually marked)
             const recentBody = document.getElementById('recent-table-body');
-            const recentToShow = window.records.slice().sort((a, b) => new Date(b.datetime) - new Date(a.datetime)).slice(0, 8);
-            
-            let recentHtml = '';
+            recentBody.innerHTML = '';
+            const recentToShow = filteredRecords.slice().reverse().slice(0, 8);
             if(recentToShow.length === 0) {
-                recentHtml = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found</td></tr>`;
+                recentBody.innerHTML = `<tr><td colspan="5" class="px-8 py-4 text-center text-xs text-slate-400 italic">No records found</td></tr>`;
             } else {
                 recentToShow.forEach(r => {
                     const originalIdx = window.records.findIndex(rec => rec.id === r.id); 
                     const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila', dateStyle: 'medium', timeStyle: 'short' });
-                    // Format LO/LOL array for display
                     const displayLo = Array.isArray(r.lo) ? r.lo.join(', ') : r.lo;
                     const displayLol = Array.isArray(r.lol) ? r.lol.join(', ') : r.lol;
                     
-                    const rowClass = r.isDisputed ? 'bg-red-50/50' : '';
-                    const strikeClass = r.isDisputed ? 'line-through text-red-300' : 'text-slate-900';
-                    const textClass = r.isDisputed ? 'text-red-300' : 'text-slate-600';
-                    
-                    recentHtml += `<tr class="clickable-row ${rowClass}" onclick="window.viewRecord(${originalIdx})"><td class="px-8 py-5 font-bold ${strikeClass} whitespace-nowrap">${date} ${r.isDisputed ? '<span class="ml-2 bg-red-100 text-red-500 text-[8px] px-1.5 py-0.5 rounded no-underline inline-block">VOID</span>' : ''}</td><td class="px-8 py-5 font-medium ${textClass}">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px] ${r.isDisputed ? 'opacity-50' : ''}">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap ${r.isDisputed ? 'opacity-50' : ''}"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
+                    recentBody.innerHTML += `<tr class="clickable-row" onclick="window.openCalloutModal(${originalIdx})"><td class="px-8 py-5 font-bold text-slate-900 whitespace-nowrap">${date}</td><td class="px-8 py-5 font-medium text-slate-600">${r.brand}</td><td class="px-8 py-5"><span class="bg-blue-50 text-blue-600 px-3 py-1 rounded-lg font-black text-[9px] tracking-widest uppercase whitespace-nowrap">${r.who}</span></td><td class="px-8 py-5 text-slate-400 font-medium italic truncate max-w-[150px]">"${r.reason}"</td><td class="px-8 py-5 text-right whitespace-nowrap"><div class="text-[10px] font-black text-slate-900 uppercase tracking-tighter truncate max-w-[100px]" title="${displayLol}">${displayLol}</div><div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[100px] inline-block" title="${displayLo}">${displayLo}</div></td></tr>`;
                 });
             }
-            recentBody.innerHTML = recentHtml;
         };
 
         window.renderLogTabs = function() {
             const container = document.getElementById('lol-filter-container');
             const lols = ['All', ...[...window.config.lols].sort()];
+            container.innerHTML = '';
             
             const dateFilterType = document.getElementById('log-date-filter')?.value || 'overall';
             const dateFilterValue = document.getElementById('log-month-picker')?.value;
-            const brandFilterValue = document.getElementById('log-brand-filter')?.value || 'All';
             
             let recordsToCount = window.records;
             if (dateFilterType === 'current_month') {
@@ -1775,32 +1105,24 @@
                 });
             }
 
-            // Apply Brand Filter
-            if (brandFilterValue !== 'All') {
-                recordsToCount = recordsToCount.filter(r => r.brand === brandFilterValue);
-            }
-
-            let tabsHtml = '';
             lols.forEach(lol => {
                 const count = lol === 'All' ? recordsToCount.length : recordsToCount.filter(r => {
-                     // Check if r.lol (string or array) includes this lead
                      if (Array.isArray(r.lol)) return r.lol.includes(lol);
                      return r.lol === lol;
                 }).length;
                 const isActive = window.currentLogFilter === lol;
-                tabsHtml += `<button onclick="window.setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span></button>`;
+                container.innerHTML += `<button onclick="window.setLogFilter('${lol}')" class="whitespace-nowrap px-6 py-3 rounded-2xl text-xs font-black transition-all ${isActive ? 'bg-blue-600 text-white shadow-xl shadow-blue-50' : 'bg-white text-slate-400 hover:bg-slate-50 border border-slate-100'}">${lol} <span class="${isActive ? 'text-blue-100' : 'text-slate-300'} ml-2">${count}</span></button>`;
             });
-            container.innerHTML = tabsHtml;
         };
 
         window.setLogFilter = function(lol) { window.currentLogFilter = lol; window.renderLogTabs(); window.renderLogs(); };
 
         window.renderLogs = function() {
             const body = document.getElementById('full-log-body');
+            body.innerHTML = '';
             
             const dateFilterType = document.getElementById('log-date-filter')?.value || 'overall';
             const dateFilterValue = document.getElementById('log-month-picker')?.value;
-            const brandFilterValue = document.getElementById('log-brand-filter')?.value || 'All';
 
             let recordsToRender = window.records;
 
@@ -1822,11 +1144,6 @@
                 });
             }
 
-            // Apply Brand Filter
-            if (brandFilterValue !== 'All') {
-                recordsToRender = recordsToRender.filter(r => r.brand === brandFilterValue);
-            }
-
             const filtered = window.currentLogFilter === 'All' 
                 ? recordsToRender 
                 : recordsToRender.filter(r => {
@@ -1834,10 +1151,8 @@
                      return r.lol === window.currentLogFilter;
                 });
 
-            let logsHtml = '';
             if(filtered.length === 0) {
-                logsHtml = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`;
-                body.innerHTML = logsHtml;
+                body.innerHTML = `<tr><td colspan="5" class="px-6 py-24 text-center text-slate-300 font-bold italic">No log entries found.</td></tr>`;
                 return;
             }
 
@@ -1855,7 +1170,7 @@
 
                 if (groupStr !== currentGroup) {
                     currentGroup = groupStr;
-                    logsHtml += `
+                    body.innerHTML += `
                         <tr class="bg-slate-100/80 border-b border-slate-200">
                             <td colspan="5" class="px-6 py-3 text-xs font-black text-slate-500 uppercase tracking-widest sticky top-0 z-10">
                                 ${currentGroup}
@@ -1864,57 +1179,71 @@
                     `;
                 }
 
-                const rowStyle = r.isDisputed ? 'bg-red-50 hover:bg-red-100' : 'hover:bg-white';
-                const opacityStyle = r.isDisputed ? 'opacity-60 grayscale' : '';
-                const disputeBadge = r.isDisputed ? '<div class="mb-1"><span class="bg-red-500 text-white text-[9px] font-black px-2 py-0.5 rounded">VOIDED</span></div>' : '';
-
-                logsHtml += `
-                    <tr class="group transition-colors border-b border-slate-50 last:border-0 ${rowStyle}">
-                        <td class="px-6 py-6 ${opacityStyle}">
-                            ${r.proof ? `<img src="${r.proof}" loading="lazy" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="window.viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
+                body.innerHTML += `
+                    <tr class="group hover:bg-white transition-colors border-b border-slate-50 last:border-0">
+                        <td class="px-6 py-6">
+                            ${r.proof ? `<img src="${r.proof}" class="h-14 w-14 rounded-2xl object-cover cursor-pointer hover:scale-110 shadow-sm transition-all" onclick="window.viewImage('${r.proof}')">` : '<div class="h-14 w-14 rounded-2xl bg-slate-50 flex items-center justify-center text-[9px] font-black text-slate-300 uppercase text-center leading-none">No Img</div>'}
                         </td>
                         <td class="px-6 py-6">
-                            ${disputeBadge}
-                            <div class="font-bold text-slate-900 ${r.isDisputed ? 'line-through text-red-900' : ''}">${date}</div>
-                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest ${r.isDisputed ? 'text-red-400' : ''}">${r.who}</div>
+                            <div class="font-bold text-slate-900">${date}</div>
+                            <div class="text-blue-600 font-black text-[10px] uppercase mt-1 tracking-widest">${r.who}</div>
                         </td>
-                        <td class="px-6 py-6 ${opacityStyle}">
+                        <td class="px-6 py-6">
                             <div class="font-bold text-slate-900">${r.brand}</div>
                             <div class="text-[10px] text-slate-400 font-bold uppercase mt-1 tracking-tighter truncate max-w-[150px]">${r.reason}</div>
                         </td>
-                        <td class="px-6 py-6 ${opacityStyle}">
+                        <td class="px-6 py-6">
                             <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest truncate max-w-[120px]" title="${displayLol}">${displayLol}</div>
                             <div class="text-[9px] font-bold text-slate-400 uppercase truncate max-w-[120px]" title="${displayLo}">${displayLo}</div>
                             <div class="text-xs italic text-slate-500 font-medium mt-1 truncate max-w-[150px]">"${r.remarks || 'No remarks'}"</div>
                         </td>
                         <td class="px-6 py-6 text-center">
                             <div class="flex items-center justify-center gap-2">
-                                <button onclick="window.viewRecord(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                                <button onclick="window.openCalloutModal(${idx})" class="p-3 bg-blue-50 text-blue-600 rounded-xl hover:bg-blue-600 hover:text-white transition-all">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
                                 </button>
-                                <button onclick="window.deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all admin-only">
+                                <button onclick="window.deleteRecord(${idx})" class="p-3 bg-red-50 text-red-500 rounded-xl hover:bg-red-500 hover:text-white transition-all">
                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd" /></svg>
                                 </button>
                             </div>
                         </td>
                     </tr>`;
             });
-            body.innerHTML = logsHtml;
         };
 
-        // Settings Renderer
+        window.handleLogDateFilterChange = function() {
+            const filterType = document.getElementById('log-date-filter').value;
+            const monthPicker = document.getElementById('log-month-picker');
+            
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    monthPicker.value = `${now.getFullYear()}-${month}`;
+                }
+            } else {
+                monthPicker.classList.add('hidden');
+            }
+            window.renderLogs();
+            window.renderLogTabs();
+        };
+
         window.renderSettings = function() {
             const renderList = (type, targetId) => {
                 const list = document.getElementById(targetId);
-                let listHtml = '';
+                list.innerHTML = '';
                 [...window.config[type]].sort().forEach(item => {
-                    listHtml += `
-                    <li class="flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all">
-                        <span class="font-bold text-sm text-slate-700">${item}</span>
-                        <button class="text-red-300 hover:text-red-600 font-bold px-2 text-xl" onclick="window.removeItem('${type}', '${item}')">&times;</button>
-                    </li>`;
+                    const li = document.createElement('li');
+                    li.className = "flex justify-between items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all";
+                    li.innerHTML = `<span class="font-bold text-sm text-slate-700">${item}</span>`;
+                    const btn = document.createElement('button');
+                    btn.className = "text-red-300 hover:text-red-600 font-bold px-2 text-xl";
+                    btn.innerHTML = "&times;";
+                    btn.onclick = () => window.removeItem(type, item);
+                    li.appendChild(btn);
+                    list.appendChild(li);
                 });
-                list.innerHTML = listHtml;
             };
 
             renderList('brands', 'list-brands');
@@ -1925,47 +1254,34 @@
             renderList('qas', 'list-qas');
 
             const ocontainer = document.getElementById('list-los');
-            let opsHtml = '';
+            ocontainer.innerHTML = '';
             [...window.config.lols].sort().forEach(lead => {
                 const leadOperators = [...window.config.los].filter(o => o.lead === lead).sort((a,b) => a.name.localeCompare(b.name));
                 if (leadOperators.length > 0) {
-                    opsHtml += `<div class="space-y-4"><h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
+                    let group = document.createElement('div');
+                    group.className = "space-y-4";
+                    group.innerHTML = `<h4 class="text-[10px] font-black text-slate-300 uppercase tracking-widest pl-2">${lead}</h4><div class="grid grid-cols-1 gap-3">`;
                     leadOperators.forEach(o => {
                         let brandTags = (o.brands || []).map(b => `<span class="px-2 py-1 bg-blue-50 text-blue-600 rounded text-[9px] font-bold uppercase tracking-wider">${b}</span>`).join('');
-                        opsHtml += `
-                        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4">
-                            <div class="flex-1">
-                                <div class="font-bold text-slate-900">${o.name}</div>
-                                <div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div>
-                            </div>
-                            <div class="flex items-center gap-3 w-full sm:w-auto">
-                                <button class="p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold" onclick="window.openEditOperatorModal('${o.name}')">
-                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                                </button>
-                                <button class="p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold" onclick="window.removeItem('los', '${o.name}')">&times;</button>
-                            </div>
-                        </div>`;
+                        let item = document.createElement('div');
+                        item.className = "flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-[2rem] border border-slate-100 shadow-sm gap-4";
+                        item.innerHTML = `<div class="flex-1"><div class="font-bold text-slate-900">${o.name}</div><div class="flex flex-wrap gap-1 mt-2">${brandTags || '<span class="text-xs text-slate-300 italic">No brands assigned</span>'}</div></div>`;
+                        let acts = document.createElement('div');
+                        acts.className = "flex items-center gap-3 w-full sm:w-auto";
+                        let editBtn = document.createElement('button');
+                        editBtn.className = "p-2.5 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold";
+                        editBtn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>`;
+                        editBtn.onclick = () => window.openEditOperatorModal(o.name);
+                        let del = document.createElement('button');
+                        del.className = "p-2.5 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold";
+                        del.innerHTML = "&times;";
+                        del.onclick = () => window.removeItem('los', o.name);
+                        acts.appendChild(editBtn); acts.appendChild(del);
+                        item.appendChild(acts); group.querySelector('div').appendChild(item);
                     });
-                    opsHtml += `</div></div>`;
+                    ocontainer.appendChild(group);
                 }
             });
-            ocontainer.innerHTML = opsHtml;
-        };
-
-        window.populateBrandChecklist = function() {
-            const container = document.getElementById('brand-checklist');
-            if (!container) return;
-            let checksHtml = '';
-            if (window.config && window.config.brands) {
-                [...window.config.brands].sort().forEach(b => {
-                    checksHtml += `
-                    <div class="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer checkbox-item" onclick="if(event.target.tagName !== 'INPUT'){const cb=this.querySelector('input'); cb.checked = !cb.checked;}">
-                        <input type="checkbox" value="${b}">
-                        <span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>
-                    </div>`;
-                });
-            }
-            container.innerHTML = checksHtml;
         };
 
         window.openEditOperatorModal = function(name) {
@@ -1977,16 +1293,15 @@
             leadSelect.innerHTML = window.config.lols.map(l => `<option value="${l}">${l}</option>`).join('');
             leadSelect.value = op.lead;
             const brandsContainer = document.getElementById('edit-op-brands');
-            let bHtml = '';
+            brandsContainer.innerHTML = '';
             [...window.config.brands].sort().forEach(b => {
                 const isChecked = (op.brands || []).includes(b);
-                bHtml += `
-                <div class="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer" onclick="if(event.target.tagName !== 'INPUT'){const cb=this.querySelector('input'); cb.checked = !cb.checked;}">
-                    <input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500">
-                    <span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>
-                </div>`;
+                const div = document.createElement('div');
+                div.className = "flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100 hover:border-blue-200 transition-colors cursor-pointer";
+                div.innerHTML = `<input type="checkbox" value="${b}" ${isChecked ? 'checked' : ''} class="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"><span class="text-xs font-bold text-slate-700 truncate select-none">${b}</span>`;
+                div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
+                brandsContainer.appendChild(div);
             });
-            brandsContainer.innerHTML = bHtml;
             window.toggleModal('edit-operator-modal', true);
         };
 
@@ -1995,15 +1310,15 @@
             const newName = document.getElementById('edit-op-name').value.trim();
             const newLead = document.getElementById('edit-op-lead').value;
             const selectedBrands = Array.from(document.querySelectorAll('#edit-op-brands input:checked')).map(cb => cb.value);
-            if (!newName) { if(window.showToast) window.showToast("Name is required"); return; }
+            if (!newName) { window.showToast("Name is required"); return; }
             const idx = window.config.los.findIndex(o => o.name === originalName);
             if (idx === -1) return;
-            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { if(window.showToast) window.showToast("Name taken"); return; }
+            if (newName !== originalName && window.config.los.some(o => o.name === newName)) { window.showToast("Name taken"); return; }
             const confirmed = await window.AppModal.show("Update Operator", `Save changes?`, 'confirm');
             if (confirmed) {
                 window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
                 if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                window.toggleModal('edit-operator-modal', false); if(window.showToast) window.showToast("Operator updated");
+                window.toggleModal('edit-operator-modal', false); window.showToast("Operator updated");
             }
         };
 
@@ -2013,7 +1328,7 @@
                 if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
                 else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
                 if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                if(window.showToast) window.showToast("Item deleted");
+                window.showToast("Item deleted");
             }
         };
 
@@ -2021,11 +1336,10 @@
             const input = document.getElementById(inputId);
             const val = input.value.trim();
             if(!val) return;
-            if(window.config[type].includes(val)) { if(window.showToast) window.showToast("Exists already"); return; }
+            if(window.config[type].includes(val)) { window.showToast("Exists already"); return; }
             
-            // Check for duplicate in personnel roles
              if(['ams', 'als', 'hosts', 'qas'].includes(type)) {
-                const foundRole = roleCategories.find(cat => window.config[cat.id].includes(val));
+                const foundRole = window.roleCategories.find(cat => window.config[cat.id].includes(val));
                 if (foundRole) {
                     await window.AppModal.show("Duplicate Entry", `"${val}" is already registered under ${foundRole.label}.`, 'alert');
                     return;
@@ -2037,7 +1351,7 @@
                 window.config[type].push(val);
                 input.value = '';
                 if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                if(window.showToast) window.showToast("Entry registered");
+                window.showToast("Entry registered");
             }
         };
 
@@ -2047,16 +1361,16 @@
              const selectedBrands = Array.from(document.querySelectorAll('#brand-checklist input:checked')).map(cb => cb.value);
 
             if(name && lead) {
-                if(window.config.los.some(o => o.name === name)) { if(window.showToast) window.showToast("Operator exists"); return; }
+                if(window.config.los.some(o => o.name === name)) { window.showToast("Operator exists"); return; }
                 const confirmed = await window.AppModal.show("Create Operator", `Add "${name}"?`, 'confirm');
                 if(confirmed) {
                     window.config.los.push({ name, lead, brands: selectedBrands });
                     document.getElementById('new-lo-name').value = '';
                      document.querySelectorAll('#brand-checklist input').forEach(cb => cb.checked = false);
                     if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
-                    if(window.showToast) window.showToast("Operator created");
+                    window.showToast("Operator created");
                 }
-            } else { if(window.showToast) window.showToast("Fill all fields"); }
+            } else { window.showToast("Fill all fields"); }
         };
 
         window.deleteRecord = async function(index) {
@@ -2064,23 +1378,9 @@
             if(!rec) return;
             const confirmed = await window.AppModal.show("Delete Record", "Permanently delete this record?", 'confirm');
             if(confirmed) {
-                if(window.deleteFirebaseRecord && rec.id) {
-                    await window.deleteFirebaseRecord(rec.id);
-                } else {
-                    window.records.splice(index, 1);
-                    if(window.saveRecords) window.saveRecords();
-                    if(window.renderAll) window.renderAll();
-                }
+                if(window.deleteFirebaseRecord && rec.id) await window.deleteFirebaseRecord(rec.id);
+                else { window.records.splice(index, 1); saveRecords(); window.renderAll(); }
             }
-        };
-
-        window.saveRecords = function() {
-            localStorage.setItem('callout_records_v4', JSON.stringify(window.records));
-        };
-
-        window.viewImage = function(src) {
-            const win = window.open("");
-            win.document.write(`<body style="margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;height:100vh;"><img src="${src}" style="max-width:95%;max-height:95%;border-radius:24px;box-shadow:0 0 50px rgba(0,0,0,0.5);"></body>`);
         };
         
         window.filterBrandCheckboxes = function(inputId, containerId) {
@@ -2134,48 +1434,68 @@
             if(id === 'dashboard') { window.renderDashboard(); }
         };
 
-        window.handleLogDateFilterChange = function() {
-            const filterType = document.getElementById('log-date-filter').value;
-            const monthPicker = document.getElementById('log-month-picker');
+        window.exportToExcel = async function() {
+            if(!window.records.length) return window.showToast("No data to export.");
+            window.showToast("Preparing Excel file... please wait.");
+
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet('Call-outs');
+
+            worksheet.columns = [
+                { header: 'Timestamp (PHT)', key: 'datetime', width: 25 },
+                { header: 'Brand', key: 'brand', width: 20 },
+                { header: 'Reporter', key: 'who', width: 20 },
+                { header: 'Reason', key: 'reason', width: 30 },
+                { header: 'Team Lead', key: 'lol', width: 20 },
+                { header: 'Operator', key: 'lo', width: 20 },
+                { header: 'Remarks', key: 'remarks', width: 30 },
+                { header: 'Evidence', key: 'evidence', width: 20 }
+            ];
+
+            worksheet.getRow(1).font = { bold: true };
             
-            if (filterType === 'specific_month') {
-                monthPicker.classList.remove('hidden');
-                if (!monthPicker.value) {
-                    const now = new Date();
-                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-                    monthPicker.value = `${now.getFullYear()}-${month}`;
-                }
-            } else {
-                monthPicker.classList.add('hidden');
-            }
-            window.renderLogs();
-            window.renderLogTabs();
-        };
-
-        window.handleLogBrandFilterChange = function() {
-            window.renderLogs();
-            window.renderLogTabs();
-        };
-
-        window.populateBrandFilter = function() {
-            const filterEl = document.getElementById('log-brand-filter');
-            if (!filterEl) return;
-            const currentVal = filterEl.value;
-            let options = '<option value="All">All Brands</option>';
-            if (window.config && window.config.brands) {
-                [...window.config.brands].sort().forEach(b => {
-                    options += `<option value="${b}">${b}</option>`;
+            for (let i = 0; i < window.records.length; i++) {
+                const r = window.records[i];
+                const date = new Date(r.datetime).toLocaleString('en-US', { timeZone: 'Asia/Manila' });
+                const loDisplay = Array.isArray(r.lo) ? r.lo.join(', ') : r.lo;
+                const lolDisplay = Array.isArray(r.lol) ? r.lol.join(', ') : r.lol;
+                
+                const row = worksheet.addRow({
+                    datetime: date,
+                    brand: r.brand,
+                    who: r.who,
+                    reason: r.reason,
+                    lol: lolDisplay,
+                    lo: loDisplay,
+                    remarks: r.remarks || "N/A",
+                    evidence: "" 
                 });
-            }
-            filterEl.innerHTML = options;
-            // Retain selection if valid
-            if (window.config.brands && window.config.brands.includes(currentVal)) {
-                filterEl.value = currentVal;
-            } else {
-                filterEl.value = "All";
-            }
-        };
 
+                if (r.proof) {
+                    row.height = 100;
+                    try {
+                        const imageId = workbook.addImage({
+                            base64: r.proof,
+                            extension: 'png',
+                        });
+
+                        worksheet.addImage(imageId, {
+                            tl: { col: 7.05, row: row.number - 1 + 0.05 }, 
+                            br: { col: 7.95, row: row.number - 0.05 },
+                            editAs: 'twoCell' 
+                        });
+                    } catch(e) {
+                        console.error("Image add error", e);
+                    }
+                }
+            }
+
+            const buffer = await workbook.xlsx.writeBuffer();
+            const blob = new Blob([buffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+            saveAs(blob, `Callout_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+            
+            window.showToast("Export successful!");
+        };
     </script>
 </body>
 </html>
