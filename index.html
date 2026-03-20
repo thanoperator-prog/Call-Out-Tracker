@@ -13,7 +13,7 @@
         // Global State
         window.records = JSON.parse(localStorage.getItem('callout_records_v4')) || [];
         window.config = JSON.parse(localStorage.getItem('callout_config_v4')) || {
-            brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: []
+            brands: [], lols: [], los: [], ams: [], als: [], hosts: [], qas: [], lead_passwords: {}
         };
         window.currentUser = JSON.parse(localStorage.getItem('callout_user')) || null;
         window.isInitialized = false;
@@ -314,6 +314,10 @@
         };
 
         window.switchLoginTab = function(tab) {
+            // Clear passwords when switching tabs
+            document.getElementById('login-lead-pass').value = '';
+            document.getElementById('login-operator-pass').value = '';
+            
             if(tab === 'lead') {
                 document.getElementById('tab-login-lead').classList.replace('text-slate-500', 'text-blue-600');
                 document.getElementById('tab-login-lead').classList.add('bg-white', 'shadow-sm');
@@ -343,32 +347,84 @@
             if (opSel) {
                 opSel.innerHTML = '<option value="">Select your name...</option>' + 
                     (window.config.los || []).map(o => o.name).sort().map(n => `<option value="${n}">${n}</option>`).join('');
+                window.checkOperatorPasswordStatus();
             }
         };
 
-        window.login = function(role) {
+        window.checkOperatorPasswordStatus = function() {
+            const name = document.getElementById('login-operator-select').value;
+            const hint = document.getElementById('operator-pass-hint');
+            const btn = document.getElementById('btn-login-operator');
+            if(!name) { hint.classList.add('hidden'); btn.innerText = "Login"; return; }
+            
+            const op = (window.config.los || []).find(o => o.name === name);
+            if (op && !op.password) {
+                hint.classList.remove('hidden');
+                btn.innerText = "Set Password & Login";
+            } else {
+                hint.classList.add('hidden');
+                btn.innerText = "Login";
+            }
+        };
+
+        window.login = async function(role) {
             if (role === 'lead') {
                 const name = document.getElementById('login-lead-select').value;
                 const passInput = document.getElementById('login-lead-pass');
                 const pass = passInput.value;
                 if (!name) return window.showToast('Please select your name.');
-                if (pass !== 'Leads123') return window.showToast('Incorrect password.');
+                if (!pass) return window.showToast('Please enter a password.');
+
+                // Allow personalized lead password, fallback to 'Leads123'
+                const specificPass = (window.config.lead_passwords && window.config.lead_passwords[name]);
+                const validPass = specificPass ? specificPass : 'Leads123';
+
+                if (pass !== validPass) {
+                    return window.showToast(specificPass ? 'Incorrect password.' : 'Incorrect. Default password is Leads123.');
+                }
+                
                 window.currentUser = { role: 'lead', name: name };
-                passInput.value = ''; // Auto-clear password field
             } else {
                 const name = document.getElementById('login-operator-select').value;
+                const passInput = document.getElementById('login-operator-pass');
+                const pass = passInput.value;
+
                 if (!name) return window.showToast('Please select your name.');
+                if (!pass) return window.showToast('Please enter a password.');
+
+                const opIndex = (window.config.los || []).findIndex(o => o.name === name);
+                if (opIndex === -1) return window.showToast('Operator not found.');
+                
+                const op = window.config.los[opIndex];
+
+                if (!op.password) {
+                    // Set new password
+                    const confirmed = await window.AppModal.show("Set Password", "Are you sure you want to set this as your permanent password?", "confirm");
+                    if (!confirmed) return;
+                    
+                    window.config.los[opIndex].password = pass;
+                    if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                    window.showToast('Password set successfully!');
+                } else if (op.password !== pass) {
+                    return window.showToast('Incorrect password.');
+                }
+                
                 window.currentUser = { role: 'operator', name: name };
             }
+            
+            // Clear passwords upon successful authentication
+            document.getElementById('login-lead-pass').value = '';
+            document.getElementById('login-operator-pass').value = '';
+            
             localStorage.setItem('callout_user', JSON.stringify(window.currentUser));
             window.checkAuth();
             window.showToast(`Logged in as ${window.currentUser.name}`);
         };
 
-        window.togglePassword = function() {
-            const passInput = document.getElementById('login-lead-pass');
-            const iconOpen = document.getElementById('eye-icon-open');
-            const iconClosed = document.getElementById('eye-icon-closed');
+        window.togglePassword = function(type = 'lead') {
+            const passInput = document.getElementById(type === 'lead' ? 'login-lead-pass' : 'login-operator-pass');
+            const iconOpen = document.getElementById(type === 'lead' ? 'eye-icon-open' : 'eye-icon-open-op');
+            const iconClosed = document.getElementById(type === 'lead' ? 'eye-icon-closed' : 'eye-icon-closed-op');
             
             if (passInput.type === 'password') {
                 passInput.type = 'text';
@@ -383,6 +439,10 @@
 
         window.logout = function() {
             window.currentUser = null;
+            // Ensure inputs are cleared when logging out
+            document.getElementById('login-lead-pass').value = '';
+            document.getElementById('login-operator-pass').value = '';
+            
             localStorage.removeItem('callout_user');
             window.showSection('dashboard');
             window.checkAuth();
@@ -472,7 +532,7 @@
                             { name: 'Operator Alex', lead: 'Lead John', brands: ['Apple Inc'] }, 
                             { name: 'Operator Bella', lead: 'Lead Sarah', brands: ['Google Store'] }
                         ],
-                        ams: ['John Manager'], als: [], hosts: [], qas: []
+                        ams: ['John Manager'], als: [], hosts: [], qas: [], lead_passwords: {}
                     };
                     setDoc(settingsRef, defaultConfig, { merge: true });
                     window.config = defaultConfig;
@@ -591,7 +651,7 @@
                     <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Password</label>
                     <div class="relative">
                         <input type="password" id="login-lead-pass" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none pr-12" placeholder="Enter password">
-                        <button type="button" onclick="window.togglePassword()" class="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 mt-1 cursor-pointer">
+                        <button type="button" onclick="window.togglePassword('lead')" class="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 mt-1 cursor-pointer">
                             <svg id="eye-icon-open" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
                               <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
                               <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -609,11 +669,27 @@
             <div id="form-login-operator" class="space-y-5 hidden">
                 <div>
                     <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Select Name</label>
-                    <select id="login-operator-select" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
+                    <select id="login-operator-select" onchange="window.checkOperatorPasswordStatus()" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer">
                         <option value="">Loading operators...</option>
                     </select>
                 </div>
-                <button onclick="window.login('operator')" class="w-full bg-slate-900 hover:bg-black text-white py-3.5 rounded-xl font-bold mt-2 shadow-lg shadow-slate-200 transition-all">Continue as Operator</button>
+                <div>
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest pl-1">Password</label>
+                    <div class="relative">
+                        <input type="password" id="login-operator-pass" class="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-3.5 text-sm mt-1 focus:ring-2 focus:ring-blue-500 outline-none pr-12" placeholder="Enter password">
+                        <button type="button" onclick="window.togglePassword('operator')" class="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-slate-600 mt-1 cursor-pointer">
+                            <svg id="eye-icon-open-op" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                            </svg>
+                            <svg id="eye-icon-closed-op" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 hidden">
+                              <path stroke-linecap="round" stroke-linejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                            </svg>
+                        </button>
+                    </div>
+                    <p id="operator-pass-hint" class="text-[9px] text-blue-500 font-bold mt-1 pl-1 hidden">Set your new password now.</p>
+                </div>
+                <button onclick="window.login('operator')" id="btn-login-operator" class="w-full bg-slate-900 hover:bg-black text-white py-3.5 rounded-xl font-bold mt-2 shadow-lg shadow-slate-200 transition-all">Login</button>
             </div>
         </div>
     </div>
@@ -1063,6 +1139,32 @@
         </div>
     </div>
 
+    <!-- Edit Lead Modal (Z-1010) -->
+    <div id="edit-lead-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden z-[1010] flex items-center justify-center p-4 modal-overlay opacity-0">
+        <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl modal-container opacity-0 scale-90">
+            <div class="p-6 border-b border-slate-50 flex justify-between items-center bg-slate-50/50">
+                <h2 class="text-xl font-black text-slate-900">Edit Team Lead</h2>
+                <button onclick="window.toggleModal('edit-lead-modal', false)" class="text-slate-400 hover:text-slate-600 p-2 bg-white rounded-full shadow-sm">&times;</button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="edit-lead-original-name">
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Lead Name</label>
+                    <input type="text" id="edit-lead-name" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div class="space-y-2">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Personal Password</label>
+                    <input type="text" id="edit-lead-pass" class="w-full bg-slate-50 border-0 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-blue-500" placeholder="Enter new password...">
+                    <p class="text-[9px] text-slate-400 mt-1">Leave blank to revert to the default password (Leads123).</p>
+                </div>
+            </div>
+            <div class="p-6 bg-slate-50/50 border-t border-slate-100 flex gap-3">
+                <button onclick="window.toggleModal('edit-lead-modal', false)" class="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-500">Cancel</button>
+                <button onclick="window.saveLeadChanges()" class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-100">Save</button>
+            </div>
+        </div>
+    </div>
+
     <!-- CUSTOM SEARCHABLE SELECT TEMPLATE -->
     <div id="search-select-template" class="hidden">
         <div class="relative w-full custom-search-select" data-id="">
@@ -1105,6 +1207,15 @@
                         <!-- Checkboxes will be injected here -->
                     </div>
                 </div>
+                <div class="space-y-2 pt-2 border-t border-slate-100">
+                    <label class="text-[10px] font-black text-slate-400 uppercase tracking-widest">Account Access</label>
+                    <div class="flex items-center justify-between bg-slate-50 p-3 rounded-xl border border-slate-100 mb-2">
+                        <span class="text-xs text-slate-500 font-bold">Current Password:</span>
+                        <span id="edit-op-current-pass" class="text-xs font-mono font-black text-slate-900 bg-white px-2 py-1 rounded shadow-sm">Not set</span>
+                    </div>
+                    <button type="button" onclick="window.resetOperatorPassword()" class="w-full bg-slate-50 hover:bg-slate-100 text-slate-600 py-3 rounded-xl text-sm font-bold transition-all border border-slate-200">Reset Operator Password</button>
+                    <p class="text-[9px] text-slate-400 mt-1">This will remove the current password so the operator can set a new one on their next login.</p>
+                </div>
             </div>
             <div class="p-6 bg-slate-50/50 border-t border-slate-100 flex gap-3">
                 <button onclick="window.toggleModal('edit-operator-modal', false)" class="flex-1 py-3 border border-slate-200 rounded-xl font-bold text-slate-500">Cancel</button>
@@ -1113,8 +1224,8 @@
         </div>
     </div>
     
-    <!-- Confirm Modal (Z-1020) -->
-    <div id="app-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md hidden z-[1020] flex items-center justify-center p-4 modal-overlay opacity-0">
+    <!-- Confirm Modal (Z-10000) -->
+    <div id="app-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-md hidden z-[10000] flex items-center justify-center p-4 modal-overlay opacity-0">
         <div class="bg-white rounded-[2rem] w-full max-w-sm overflow-hidden shadow-2xl modal-container opacity-0 scale-90 p-8 space-y-6 text-center">
             <div id="app-modal-icon" class="flex justify-center"></div>
             <div class="space-y-2">
@@ -1125,8 +1236,8 @@
         </div>
     </div>
 
-    <!-- Toast Notification (Z-9999) -->
-    <div id="toast" class="fixed bottom-10 right-10 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl translate-y-32 transition-transform duration-300 z-[9999] font-bold text-sm"></div>
+    <!-- Toast Notification (Z-10001) -->
+    <div id="toast" class="fixed bottom-10 right-10 bg-slate-900 text-white px-8 py-4 rounded-2xl shadow-2xl translate-y-32 transition-transform duration-300 z-[10001] font-bold text-sm"></div>
 
     <!-- MAIN/UI LOGIC SCRIPTS -->
     <script>
@@ -1408,6 +1519,28 @@
             window.toggleModal('reject-dispute-modal', false);
             window.toggleModal('view-record-modal', false);
             window.renderAll();
+        };
+
+        window.resetOperatorPassword = async function() {
+            const originalName = document.getElementById('edit-op-original-name').value;
+            const idx = window.config.los.findIndex(o => o.name === originalName);
+            if (idx === -1) return;
+            
+            const confirmed = await window.AppModal.show("Reset Password", `Are you sure you want to reset the password for ${originalName}?`, 'confirm');
+            if (confirmed) {
+                delete window.config.los[idx].password;
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                
+                // Update UI immediately
+                const passDisplay = document.getElementById('edit-op-current-pass');
+                if(passDisplay) {
+                    passDisplay.innerText = 'Not yet set';
+                    passDisplay.classList.remove('text-blue-600');
+                    passDisplay.classList.add('text-slate-400', 'italic');
+                }
+                
+                window.showToast("Password reset successfully.");
+            }
         };
 
         window.openCalloutModal = function(editIdx = -1) {
@@ -1836,7 +1969,35 @@
             };
 
             renderList('brands', 'list-brands');
-            renderList('lols', 'list-lols');
+            
+            // Custom render for Leads with password management
+            const lcontainer = document.getElementById('list-lols');
+            if(lcontainer) {
+                let htmlLols = '';
+                [...(window.config.lols||[])].sort().forEach(item => {
+                    const hasPass = (window.config.lead_passwords && window.config.lead_passwords[item]);
+                    const passText = hasPass ? window.config.lead_passwords[item] : 'Leads123 (Default)';
+                    const passClass = hasPass ? 'text-blue-600' : 'text-slate-400 italic';
+                    htmlLols += `
+                        <li class="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-slate-50 p-4 rounded-2xl group hover:bg-white hover:ring-2 hover:ring-slate-100 transition-all gap-3">
+                            <div>
+                                <span class="font-bold text-sm text-slate-700 block">${item}</span>
+                                <span class="text-[10px] text-slate-400 font-bold uppercase tracking-widest">Pass: <span class="${passClass}">${passText}</span></span>
+                            </div>
+                            <div class="flex items-center gap-2 w-full sm:w-auto">
+                                <button onclick="window.openEditLeadModal('${item}')" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white rounded-xl transition-all font-bold">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                </button>
+                                <button onclick="window.removeItem('lols', '${item}')" class="p-2 bg-red-50 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all font-bold">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                        </li>
+                    `;
+                });
+                lcontainer.innerHTML = htmlLols;
+            }
+
             renderList('ams', 'list-ams');
             renderList('als', 'list-als');
             renderList('hosts', 'list-hosts');
@@ -1871,6 +2032,59 @@
             });
             ocontainer.innerHTML = htmlOperators;
         };
+        
+        window.openEditLeadModal = function(name) {
+            document.getElementById('edit-lead-original-name').value = name;
+            document.getElementById('edit-lead-name').value = name;
+            const pass = (window.config.lead_passwords && window.config.lead_passwords[name]) || '';
+            document.getElementById('edit-lead-pass').value = pass;
+            window.toggleModal('edit-lead-modal', true);
+        };
+
+        window.saveLeadChanges = async function() {
+            const originalName = document.getElementById('edit-lead-original-name').value;
+            const newName = document.getElementById('edit-lead-name').value.trim();
+            const newPass = document.getElementById('edit-lead-pass').value.trim();
+            
+            if (!newName) return window.showToast("Name is required");
+            
+            const idx = window.config.lols.indexOf(originalName);
+            if (idx === -1) return;
+            
+            if (newName !== originalName && window.config.lols.includes(newName)) {
+                return window.showToast("Name already exists.");
+            }
+
+            const confirmed = await window.AppModal.show("Update Lead", `Save changes for this Team Lead?`, 'confirm');
+            if (confirmed) {
+                window.config.lols[idx] = newName;
+                
+                if (!window.config.lead_passwords) window.config.lead_passwords = {};
+                
+                if (newName !== originalName) {
+                    if (window.config.lead_passwords[originalName]) {
+                        window.config.lead_passwords[newName] = window.config.lead_passwords[originalName];
+                    }
+                    delete window.config.lead_passwords[originalName];
+                    
+                    if (window.config.los) {
+                        window.config.los.forEach(o => {
+                            if (o.lead === originalName) o.lead = newName;
+                        });
+                    }
+                }
+                
+                if (newPass) {
+                    window.config.lead_passwords[newName] = newPass;
+                } else {
+                    delete window.config.lead_passwords[newName];
+                }
+
+                if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
+                window.toggleModal('edit-lead-modal', false); 
+                window.showToast("Team Lead updated");
+            }
+        };
 
         window.openEditOperatorModal = function(name) {
             const op = window.config.los.find(o => o.name === name);
@@ -1890,6 +2104,21 @@
                 div.onclick = (e) => { if (e.target.tagName !== 'INPUT') { const cb = div.querySelector('input'); cb.checked = !cb.checked; } };
                 brandsContainer.appendChild(div);
             });
+            
+            // Handle Password Display
+            const passDisplay = document.getElementById('edit-op-current-pass');
+            if(passDisplay) {
+                if(op.password) {
+                    passDisplay.innerText = op.password;
+                    passDisplay.classList.remove('text-slate-400', 'italic');
+                    passDisplay.classList.add('text-blue-600');
+                } else {
+                    passDisplay.innerText = 'Not yet set';
+                    passDisplay.classList.remove('text-blue-600');
+                    passDisplay.classList.add('text-slate-400', 'italic');
+                }
+            }
+            
             window.toggleModal('edit-operator-modal', true);
         };
 
@@ -1904,7 +2133,9 @@
             if (newName !== originalName && window.config.los.some(o => o.name === newName)) { window.showToast("Name taken"); return; }
             const confirmed = await window.AppModal.show("Update Operator", `Save changes?`, 'confirm');
             if (confirmed) {
-                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands };
+                // Re-assign password if existing
+                const existingPass = window.config.los[idx].password;
+                window.config.los[idx] = { name: newName, lead: newLead, brands: selectedBrands, password: existingPass };
                 if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
                 window.toggleModal('edit-operator-modal', false); window.showToast("Operator updated");
             }
@@ -1913,7 +2144,12 @@
         window.removeItem = async function(type, id) {
             const confirmed = await window.AppModal.show("Delete Item", `Delete "${id}"?`, 'confirm');
             if(confirmed) {
-                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) window.config[type] = window.config[type].filter(item => item !== id);
+                if(['brands', 'lols', 'ams', 'als', 'hosts', 'qas'].includes(type)) {
+                    window.config[type] = window.config[type].filter(item => item !== id);
+                    if (type === 'lols' && window.config.lead_passwords) {
+                        delete window.config.lead_passwords[id];
+                    }
+                }
                 else if(type === 'los') window.config.los = window.config.los.filter(o => o.name !== id);
                 if(window.saveFirebaseConfig) await window.saveFirebaseConfig(window.config);
                 window.showToast("Item deleted");
