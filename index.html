@@ -1615,6 +1615,23 @@
             if(editOpLead) editOpLead.innerHTML = sortedLeads.map(l => `<option value="${l}">${l}</option>`).join('');
         };
 
+        window.handleDashboardFilterChange = function() {
+            const filterType = document.getElementById('dashboard-filter').value;
+            const monthPicker = document.getElementById('dashboard-month-picker');
+            
+            if (filterType === 'specific_month') {
+                monthPicker.classList.remove('hidden');
+                if (!monthPicker.value) {
+                    const now = new Date();
+                    const month = (now.getMonth() + 1).toString().padStart(2, '0');
+                    monthPicker.value = `${now.getFullYear()}-${month}`;
+                }
+            } else {
+                monthPicker.classList.add('hidden');
+            }
+            window.renderDashboard();
+        };
+
         window.renderDashboard = function() {
             if (!window.records) return;
             const filterType = document.getElementById('dashboard-filter') ? document.getElementById('dashboard-filter').value : 'overall';
